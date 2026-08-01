@@ -4,12 +4,13 @@ import Mark from "mark.js";
 const MATCH_SELECTOR = "mark[data-markjs]";
 const CURRENT_MATCH_CLASS = "search-match--current";
 
+/** Drives the always-visible toolbar search field: live highlight-as-you-type plus Ctrl+F to focus it. */
 export function useSearch(containerRef: RefObject<HTMLElement | null>) {
-  const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [matchCount, setMatchCount] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const markInstanceRef = useRef<InstanceType<typeof Mark> | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const focusMatch = useCallback(
     (index: number) => {
@@ -38,7 +39,7 @@ export function useSearch(containerRef: RefObject<HTMLElement | null>) {
   }, [containerRef]);
 
   useEffect(() => {
-    if (!isOpen || query.trim() === "") {
+    if (query.trim() === "") {
       clearHighlights();
       return;
     }
@@ -62,7 +63,7 @@ export function useSearch(containerRef: RefObject<HTMLElement | null>) {
         });
       },
     });
-  }, [query, isOpen, containerRef]);
+  }, [query, containerRef, clearHighlights, focusMatch]);
 
   const goToNext = useCallback(() => {
     if (matchCount === 0) return;
@@ -82,26 +83,22 @@ export function useSearch(containerRef: RefObject<HTMLElement | null>) {
     });
   }, [matchCount, focusMatch]);
 
-  const close = useCallback(() => {
-    setIsOpen(false);
+  const clear = useCallback(() => {
     setQuery("");
     clearHighlights();
   }, [clearHighlights]);
-
-  const open = useCallback(() => setIsOpen(true), []);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
         event.preventDefault();
-        open();
-      } else if (event.key === "Escape" && isOpen) {
-        close();
+        inputRef.current?.focus();
+        inputRef.current?.select();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, close, isOpen]);
+  }, []);
 
-  return { isOpen, query, setQuery, matchCount, currentIndex, open, close, goToNext, goToPrev };
+  return { query, setQuery, matchCount, currentIndex, goToNext, goToPrev, clear, inputRef };
 }

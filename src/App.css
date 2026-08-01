@@ -259,37 +259,28 @@ button:disabled {
   overflow: auto;
 }
 
-.search-bar {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.75rem;
-  z-index: 20;
+.toolbar__search {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.4rem 0.5rem;
-  border-radius: 8px;
-  background-color: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.search-bar__input {
+.toolbar__search-input {
   border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: 4px;
-  padding: 0.3em 0.5em;
+  padding: 0.35em 0.5em;
   font-size: 0.9em;
   min-width: 180px;
 }
 
-.search-bar__count {
+.toolbar__search-count {
   font-size: 0.85em;
   opacity: 0.7;
   min-width: 3.5em;
   text-align: center;
 }
 
-.search-bar button {
+.toolbar__search button {
   padding: 0.3em 0.5em;
   font-size: 0.85em;
   box-shadow: none;
@@ -643,12 +634,7 @@ mark[data-markjs].search-match--current {
     color: #ffa198;
   }
 
-  .search-bar {
-    background-color: #1f1f1f;
-    border-color: rgba(255, 255, 255, 0.15);
-  }
-
-  .search-bar__input {
+  .toolbar__search-input {
     background-color: #0f0f0f98;
     border-color: rgba(255, 255, 255, 0.15);
     color: #ffffff;

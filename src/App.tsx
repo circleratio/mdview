@@ -10,7 +10,6 @@ import { Toolbar } from "./components/Toolbar";
 import { DropZoneOverlay } from "./components/DropZoneOverlay";
 import { Sidebar } from "./components/Sidebar";
 import { MarkdownView } from "./components/MarkdownView";
-import { SearchBar } from "./components/SearchBar";
 import "katex/dist/katex.min.css";
 import "./App.css";
 
@@ -37,7 +36,7 @@ function AppShell() {
 
   return (
     <div className="app">
-      <Toolbar />
+      <Toolbar search={search} />
       <DropZoneOverlay>
         {error && <div className="app__error">{error}</div>}
         {loading && <div className="app__loading">読み込み中...</div>}
@@ -47,28 +46,15 @@ function AppShell() {
           </div>
         )}
         {!loading && content !== null && (
-          <>
-            {search.isOpen && (
-              <SearchBar
-                query={search.query}
-                onQueryChange={search.setQuery}
-                matchCount={search.matchCount}
-                currentIndex={search.currentIndex}
-                onNext={search.goToNext}
-                onPrev={search.goToPrev}
-                onClose={search.close}
-              />
-            )}
-            <Group orientation="horizontal" className="panels">
-              <Panel defaultSize="22" minSize="12" maxSize="50" className="panel panel--sidebar">
-                <Sidebar nodes={tree} activeId={activeId} onSelect={handleSelectHeading} />
-              </Panel>
-              <Separator className="resize-handle" />
-              <Panel minSize="30" className="panel panel--content">
-                <MarkdownView content={content} dir={dir} containerRef={containerRef} />
-              </Panel>
-            </Group>
-          </>
+          <Group orientation="horizontal" className="panels">
+            <Panel defaultSize="22" minSize="12" maxSize="50" className="panel panel--sidebar">
+              <Sidebar nodes={tree} activeId={activeId} onSelect={handleSelectHeading} />
+            </Panel>
+            <Separator className="resize-handle" />
+            <Panel minSize="30" className="panel panel--content">
+              <MarkdownView content={content} dir={dir} containerRef={containerRef} />
+            </Panel>
+          </Group>
         )}
       </DropZoneOverlay>
     </div>

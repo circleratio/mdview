@@ -46,13 +46,12 @@ src/
     useOsTheme.ts                         # OSライト/ダーク設定の監視
     useExternalEditor.ts                    # 外部エディタコマンドの永続化・起動・Ctrl+E
   components/
-    Toolbar.tsx           # 開く・最近使ったファイル
+    Toolbar.tsx           # 開く・最近使ったファイル・エディタ・検索欄
     DropZoneOverlay.tsx     # ドラッグ&ドロップ受付
     Sidebar.tsx / TocTree.tsx # 左ペイン目次
     MarkdownView.tsx           # 右ペイン本体（react-markdown配線）
     MermaidBlock.tsx              # Mermaid個別描画
     MarkdownLink.tsx                 # 相対リンク/外部リンクの振り分け
-    SearchBar.tsx                       # 検索UI
   lib/
     markdown.tsx      # remark/rehypeプラグイン構成・componentsマップ
     headings.ts          # 見出しツリー構築（純粋関数、テスト対象）
@@ -100,15 +99,19 @@ src/
 | `useFileWatcher` | 現在の`path`に対して`file-changed`イベントを購読し、一致したら`loadFile`で再読込する。 |
 | `useRecentFiles` | `@tauri-apps/plugin-store`に`recentFiles`配列（最大10件、重複除去）を永続化する。 |
 | `useHeadings` | レンダリング後のDOMを`querySelectorAll('h1..h6')`で走査して見出しツリーを構築し、`IntersectionObserver`で画面内に入っている見出しのうち最上部のものを「アクティブ」とする。Markdownの再パースを避け、rehype-slugが振ったidをそのままTOCのリンク先として使う設計。 |
-| `useSearch` | `mark.js`のインスタンスを保持し、クエリ変更のたびに`unmark→mark`。マッチ要素に`.search-match--current`クラスを付け外ししてスクロール。`Ctrl+F`（開く）/`Escape`（閉じる）のグローバルキーハンドリングも内包し、`SearchBar`側の`Enter`/`Shift+Enter`・▲/▼ボタンで前後のマッチへ循環移動する。件数表示（`現在位置 / 総数`）も本フックの状態から算出する。 |
+| `useSearch` | `mark.js`のインスタンスを保持し、クエリ変更のたびに`unmark→mark`（クエリが空なら単に`unmark`だけ行う）。マッチ要素に`.search-match--current`クラスを付け外ししてスクロール。検索欄自体はツールバーに常設のため「開く/閉じる」概念は持たず、`Ctrl+F`は`inputRef`経由でその入力欄にフォーカス＋選択するだけ。`Toolbar`側の`Enter`/`Shift+Enter`・▲/▼ボタンで前後のマッチへ循環移動し、`Escape`で`clear()`（クエリ空にしてハイライト解除）を呼ぶ。件数表示（`現在位置 / 総数`）も本フックの状態から算出する。 |
 | `useOsTheme` | `matchMedia('(prefers-color-scheme: dark)')`の変化を購読。CSSの`@media`だけで済まないMermaidの配色切り替え（SVGに色が焼き込まれるため）にのみ使用。 |
 | `useExternalEditor` | エディタコマンド（`settings.json`ストア、デフォルト`emacs`）の読み込み・保存と、`openInEditor()`（Rustの`open_in_editor`呼び出し、失敗時は`setError`）を提供。`Ctrl+E`のグローバルキーハンドリングも内包（`useSearch`と同じパターン）。 |
 
 ### 4.3 コンポーネント構成
 
-`App.tsx`が`DocumentProvider`でラップし、`Toolbar` → `DropZoneOverlay`（内部に検索バー・2ペイン`Group/Panel/Separator`）という構造。2ペインは`react-resizable-panels`の`Group`/`Panel`/`Separator`（サイズ指定は**文字列でパーセント指定**、数値だとpx扱いになる点に注意）。
+`App.tsx`が`DocumentProvider`でラップし、`Toolbar` → `DropZoneOverlay`（内部に2ペイン`Group/Panel/Separator`）という構造。2ペインは`react-resizable-panels`の`Group`/`Panel`/`Separator`（サイズ指定は**文字列でパーセント指定**、数値だとpx扱いになる点に注意）。
 
-`MarkdownView`が`react-markdown`本体を描画し、`lib/markdown.tsx`の`getMarkdownComponents(dir)`で生成した`components`マップ（`img`/`a`/`pre`のオーバーライド）を渡す。
+`useSearch(containerRef)`は`AppShell`（本文の`containerRef`を持つ側）で呼び出し、戻り値を`<Toolbar search={search} />`としてpropsで渡す。`Toolbar`と本文ペインは兄弟コンポーネントで`containerRef`を共有できないため、この一箇所だけpropバケツリレーになっている（他のToolbar機能は各自のフックを直接呼ぶ自己完結型）。
+
+`MarkdownView`が`react-markdown`本体を描画し、`lib/markdown.tsx`の`getMarkdownComponents(dir)`で生成した`components`マップ（`img`/`a`/`pre`のオーバーライド）を`useMemo(() => getMarkdownComponents(dir), [dir])`でメモ化して渡す。
+
+> **既知の落とし穴**: `components`マップをメモ化せず毎レンダリング生成すると、`pre`/`img`/`a`の関数参照が変わるたびにreact-markdownからは「別コンポーネント」に見え、Reactはその位置のDOMを再マウント（破棄→再生成）する。検索（`useSearch`、mark.jsでコードブロック内に直接`<mark>`をDOM挿入）のような**React管理外でDOMを直接書き換える処理**と組み合わせると、無関係な状態更新（例: 検索の一致件数更新）のたびにコードブロックだけDOMが作り直され、挿入したはずのハイライトが消える。段落等（標準の`p`/`h1`など、コンポーネントを上書きしていない要素）は影響を受けないため、「見出しや段落はハイライトされるがコードブロックだけ次のマッチに移ると反映されない」という形で症状が現れた。`dir`が変わらない限り安定した参照を保つのが対策。
 
 `Toolbar`は「開く」「最近使ったファイル」に加えて「エディタで開く」ボタン（`path`が`null`の間は無効化）と、⚙ボタンで開閉する小さな設定パネル（`useExternalEditor`のコマンド文字列をテキスト入力で編集・保存）を持つ。専用の設定画面は設けず、既存のドロップダウン（最近使ったファイル一覧）と同じ「ツールバー直下にポップアップ」パターンを踏襲している。
 

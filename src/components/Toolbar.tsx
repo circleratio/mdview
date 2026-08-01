@@ -2,10 +2,15 @@ import { useState } from "react";
 import { useFileOpener } from "../hooks/useFileOpener";
 import { useRecentFiles } from "../hooks/useRecentFiles";
 import { useExternalEditor } from "../hooks/useExternalEditor";
+import type { useSearch } from "../hooks/useSearch";
 import { useDocument } from "../state/DocumentContext";
 import { basenameForDisplay } from "../lib/displayPath";
 
-export function Toolbar() {
+interface ToolbarProps {
+  search: ReturnType<typeof useSearch>;
+}
+
+export function Toolbar({ search }: ToolbarProps) {
   const { openViaDialog, loadFile } = useFileOpener();
   const { recentFiles } = useRecentFiles();
   const { editorCommand, setEditorCommand, openInEditor } = useExternalEditor();
@@ -86,6 +91,39 @@ export function Toolbar() {
             <button type="submit">保存</button>
           </form>
         )}
+      </div>
+      <div className="toolbar__search">
+        <input
+          ref={search.inputRef}
+          type="text"
+          value={search.query}
+          onChange={(e) => search.setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (e.shiftKey) search.goToPrev();
+              else search.goToNext();
+            } else if (e.key === "Escape") {
+              search.clear();
+            }
+          }}
+          placeholder="本文を検索（Ctrl+F）"
+          disabled={path === null}
+          className="toolbar__search-input"
+        />
+        <span className="toolbar__search-count">
+          {search.matchCount > 0
+            ? `${search.currentIndex + 1} / ${search.matchCount}`
+            : search.query
+              ? "0 / 0"
+              : ""}
+        </span>
+        <button type="button" onClick={search.goToPrev} disabled={search.matchCount === 0} aria-label="前へ">
+          ▲
+        </button>
+        <button type="button" onClick={search.goToNext} disabled={search.matchCount === 0} aria-label="次へ">
+          ▼
+        </button>
       </div>
       <span className="toolbar__current-path" title={path ?? undefined}>
         {path ? basenameForDisplay(path) : "ファイルが開かれていません"}
