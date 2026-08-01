@@ -12,6 +12,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::initial_file_path,
             commands::open_in_editor,
+            commands::finish_startup,
             watcher::start_watching
         ])
         .run(tauri::generate_context!())

@@ -34,6 +34,16 @@ function AppShell() {
     });
   }, []);
 
+  useEffect(() => {
+    // See `finish_startup` in commands.rs: WebView2 sometimes fails to paint the
+    // right-aligned toolbar item on its first layout. A short delay lets the initial
+    // (buggy) paint actually happen before the resize nudge forces a repaint.
+    const timer = setTimeout(() => {
+      void invoke("finish_startup");
+    }, 400);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div className="app">
       <Toolbar search={search} />

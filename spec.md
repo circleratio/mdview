@@ -46,7 +46,8 @@ src/
     useOsTheme.ts                         # OSライト/ダーク設定の監視
     useExternalEditor.ts                    # 外部エディタコマンドの永続化・起動・Ctrl+E
   components/
-    Toolbar.tsx           # 開く・最近使ったファイル・エディタ・検索欄
+    Toolbar.tsx           # 開く・最近使ったファイル・エディタ・検索欄（アイコンボタン）
+    icons.tsx               # ツールバー用SVGラインアイコン（Folder/History/Pencil）
     DropZoneOverlay.tsx     # ドラッグ&ドロップ受付
     Sidebar.tsx / TocTree.tsx # 左ペイン目次
     MarkdownView.tsx           # 右ペイン本体（react-markdown配線）
@@ -70,6 +71,7 @@ src/
 | `initial_file_path()` | `std::env::args().nth(1)` を返すだけ。起動時にCLI引数で渡されたパスをフロントエンドへ渡す。 |
 | `start_watching(path)` | 指定ファイルの**親ディレクトリ**を`notify`で監視し、対象ファイルへの変更イベントを検知したら`file-changed`イベント（payload=path）をフロントエンドへemitする。既存の監視は`WatcherState`（`Mutex<Option<RecommendedWatcher>>`）を新しい値で置き換えることで自動的に停止・破棄される。 |
 | `open_in_editor(command, path)` | `std::process::Command::new(command).arg(path).spawn()`を実行するだけの薄いラッパー。`spawn`は起動確認のみで完了を待たない（fire-and-forget）。`command`はフロントエンドの`useExternalEditor`が保持する**ユーザー設定値**（デフォルト`emacs`）のみを渡す設計とし、Markdown本文など信頼できない入力を渡す経路は無い。起動失敗（コマンドが見つからない等）は`Err(String)`にして呼び出し元でエラーバナー表示する。 |
+| `finish_startup(app)` | 起動直後に1回だけフロントエンドから呼ばれる。ウィンドウの`inner_size()`を取得し、+1px→元のサイズに戻す形で`set_size()`を2回呼ぶだけの処理。7.1「既知の落とし穴」参照。 |
 
 親ディレクトリ単位で監視しているのは、エディタの「一時ファイルへ保存→リネームで置き換え」という一般的な保存方式でもイベントを取りこぼさないため。
 
@@ -83,7 +85,7 @@ src/
 - `fs:scope`に`{"path": "**/*"}`を許可し、ユーザーが選んだ任意の場所のファイルを読み取れるようにする
 - **書き込み・削除系の権限は一切付与しない**（要求仕様3.6「閲覧専用」を権限レベルで担保）
 - `tauri.conf.json`の`app.security.assetProtocol`を`enable:true, scope:["**"]`にし、Rust依存の`tauri` cargo featureに`protocol-asset`を追加。ローカル画像を`convertFileSrc()`経由で表示するために必要。
-- `initial_file_path`/`start_watching`/`open_in_editor`はプラグインコマンドではなく自前実装のTauriコマンドのため、capabilities（ACL）の対象外で常時呼び出し可能。`open_in_editor`は代わりに「フロントエンド側でユーザー設定値以外を渡さない」という実装規約でスコープを絞っている（3.1参照）。
+- `initial_file_path`/`start_watching`/`open_in_editor`/`finish_startup`はプラグインコマンドではなく自前実装のTauriコマンドのため、capabilities（ACL）の対象外で常時呼び出し可能。`open_in_editor`は代わりに「フロントエンド側でユーザー設定値以外を渡さない」という実装規約でスコープを絞っている（3.1参照）。
 
 ## 4. フロントエンド設計
 
@@ -114,6 +116,8 @@ src/
 > **既知の落とし穴**: `components`マップをメモ化せず毎レンダリング生成すると、`pre`/`img`/`a`の関数参照が変わるたびにreact-markdownからは「別コンポーネント」に見え、Reactはその位置のDOMを再マウント（破棄→再生成）する。検索（`useSearch`、mark.jsでコードブロック内に直接`<mark>`をDOM挿入）のような**React管理外でDOMを直接書き換える処理**と組み合わせると、無関係な状態更新（例: 検索の一致件数更新）のたびにコードブロックだけDOMが作り直され、挿入したはずのハイライトが消える。段落等（標準の`p`/`h1`など、コンポーネントを上書きしていない要素）は影響を受けないため、「見出しや段落はハイライトされるがコードブロックだけ次のマッチに移ると反映されない」という形で症状が現れた。`dir`が変わらない限り安定した参照を保つのが対策。
 
 `Toolbar`は「開く」「最近使ったファイル」に加えて「エディタで開く」ボタン（`path`が`null`の間は無効化）と、⚙ボタンで開閉する小さな設定パネル（`useExternalEditor`のコマンド文字列をテキスト入力で編集・保存）を持つ。専用の設定画面は設けず、既存のドロップダウン（最近使ったファイル一覧）と同じ「ツールバー直下にポップアップ」パターンを踏襲している。
+
+主要な操作ボタン（開く/最近使ったファイル/エディタで開く）は文字ラベルではなく`icons.tsx`のSVGラインアイコン（`.toolbar-icon`、24x24 viewBoxのstroke描画）で表示し、`title`/`aria-label`でテキストの代替を提供する。現在開いているファイル名は`.toolbar__current-path`として`margin-left: auto`でツールバー右端に寄せる（7.1参照）。
 
 ## 5. Markdownレンダリングパイプライン
 
@@ -157,6 +161,14 @@ Windows専用の同期パス処理。`@tauri-apps/api/path`の非同期APIは`im
 - ベースの配色・ボタン・ツールバー等は`App.css`内の`@media (prefers-color-scheme: dark)`のみで自動切り替え（JSでのテーマ管理は行わない）
 - コードハイライトは`highlight.js`のCSSを直接importせず、`.hljs-*`トークンクラスに対する自前の配色（ライト/ダーク）をApp.cssに定義。バンドルサイズと二重CSS管理を避けるため
 - Mermaidだけは前述の通りSVGに色を焼き込む都合上、`useOsTheme`で明示的に再レンダリングする
+
+### 7.1 既知の落とし穴: WebView2の初回ペイント漏れ
+
+ツールバーをアイコン化した際、`margin-left: auto`で右端に寄せた`.toolbar__current-path`（ファイル名表示）が、アプリ起動直後の初回描画では**一切ペイントされない**現象が発生した。`getComputedStyle`・`getBoundingClientRect`・`document.elementFromPoint()`はいずれも正しい値を返す（レイアウト自体は正常）ため、CSSの問題ではなくWebView2側の初回コンポジット漏れと判断した。
+
+切り分けのため`margin-left: auto`／flexスペーサー／親要素の`justify-content: space-between`／`position: absolute`の4通りの右寄せ手法を試したが、いずれも同じ症状（ウィンドウをリサイズすると即座に正しく描画される）が再現した。「配置場所そのものではなく、初回レイアウト確定後に一度も再描画されていないこと」が原因と特定した。
+
+対策として、`src-tauri/src/commands.rs`の`finish_startup`コマンドを起動直後に1回呼び出す。`App.tsx`側で初回マウントから400ms後（初回のバギーな描画が実際に発生するのを待つための遅延）に`invoke("finish_startup")`し、Rust側でウィンドウを+1px→元のサイズへ2回`set_size()`することで強制的に再コンポジットさせ、以降は正常に描画される。ウィンドウを`visible:false`で起動して見せる前に直そうとする方式も試したが、非表示中はWebView2がコンポジット自体を省略するため無効だった（表示中のウィンドウに対してのみ有効）。
 
 ## 8. ビルド・パッケージング
 

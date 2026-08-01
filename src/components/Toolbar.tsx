@@ -5,6 +5,7 @@ import { useExternalEditor } from "../hooks/useExternalEditor";
 import type { useSearch } from "../hooks/useSearch";
 import { useDocument } from "../state/DocumentContext";
 import { basenameForDisplay } from "../lib/displayPath";
+import { FolderIcon, HistoryIcon, PencilIcon } from "./icons";
 
 interface ToolbarProps {
   search: ReturnType<typeof useSearch>;
@@ -21,16 +22,25 @@ export function Toolbar({ search }: ToolbarProps) {
 
   return (
     <div className="toolbar">
-      <button type="button" onClick={() => void openViaDialog()}>
-        開く
+      <button
+        type="button"
+        className="toolbar__icon-btn"
+        title="開く"
+        aria-label="開く"
+        onClick={() => void openViaDialog()}
+      >
+        <FolderIcon />
       </button>
       <div className="toolbar__recent">
         <button
           type="button"
+          className="toolbar__icon-btn"
+          title="最近使ったファイル"
+          aria-label="最近使ったファイル"
           disabled={recentFiles.length === 0}
           onClick={() => setIsRecentOpen((open) => !open)}
         >
-          最近使ったファイル
+          <HistoryIcon />
         </button>
         {isRecentOpen && recentFiles.length > 0 && (
           <ul className="toolbar__recent-list">
@@ -53,15 +63,18 @@ export function Toolbar({ search }: ToolbarProps) {
       </div>
       <button
         type="button"
+        className="toolbar__icon-btn"
         disabled={path === null}
         title={`${editorCommand} で開く（Ctrl+E）`}
+        aria-label="エディタで開く"
         onClick={() => void openInEditor()}
       >
-        エディタで開く
+        <PencilIcon />
       </button>
       <div className="toolbar__editor-settings">
         <button
           type="button"
+          className="toolbar__icon-btn"
           aria-label="エディタ設定"
           title="外部エディタのコマンドを変更"
           onClick={() => {
@@ -118,10 +131,24 @@ export function Toolbar({ search }: ToolbarProps) {
               ? "0 / 0"
               : ""}
         </span>
-        <button type="button" onClick={search.goToPrev} disabled={search.matchCount === 0} aria-label="前へ">
+        <button
+          type="button"
+          className="toolbar__icon-btn"
+          title="前へ"
+          onClick={search.goToPrev}
+          disabled={search.matchCount === 0}
+          aria-label="前へ"
+        >
           ▲
         </button>
-        <button type="button" onClick={search.goToNext} disabled={search.matchCount === 0} aria-label="次へ">
+        <button
+          type="button"
+          className="toolbar__icon-btn"
+          title="次へ"
+          onClick={search.goToNext}
+          disabled={search.matchCount === 0}
+          aria-label="次へ"
+        >
           ▼
         </button>
       </div>
