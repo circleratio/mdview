@@ -1,0 +1,64 @@
+import { useCallback, useEffect, useState } from "react";
+import { load, type Store } from "@tauri-apps/plugin-store";
+import { invoke } from "@tauri-apps/api/core";
+import { useDocument } from "../state/DocumentContext";
+
+const STORE_FILE = "settings.json";
+const EDITOR_COMMAND_KEY = "editorCommand";
+export const DEFAULT_EDITOR_COMMAND = "emacs";
+
+let storePromise: Promise<Store> | null = null;
+function getStore(): Promise<Store> {
+  if (!storePromise) {
+    storePromise = load(STORE_FILE, { autoSave: true });
+  }
+  return storePromise;
+}
+
+/** Persisted "open in external editor" command, plus the action to launch it (button or Ctrl+E). */
+export function useExternalEditor() {
+  const { path, setError } = useDocument();
+  const [editorCommand, setEditorCommandState] = useState(DEFAULT_EDITOR_COMMAND);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const store = await getStore();
+      const value = await store.get<string>(EDITOR_COMMAND_KEY);
+      if (!cancelled && value) setEditorCommandState(value);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const setEditorCommand = useCallback(async (command: string) => {
+    const trimmed = command.trim();
+    if (trimmed === "") return;
+    const store = await getStore();
+    await store.set(EDITOR_COMMAND_KEY, trimmed);
+    setEditorCommandState(trimmed);
+  }, []);
+
+  const openInEditor = useCallback(async () => {
+    if (!path) return;
+    try {
+      await invoke("open_in_editor", { command: editorCommand, path });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [path, editorCommand, setError]);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "e") {
+        event.preventDefault();
+        void openInEditor();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [openInEditor]);
+
+  return { editorCommand, setEditorCommand, openInEditor };
+}

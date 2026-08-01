@@ -5,8 +5,8 @@
 ## 1. アーキテクチャ概要
 
 - **Tauri v2**（Rust製バックエンド + OS純正Webview）上に**React 19 + TypeScript + Vite**のフロントエンドを載せる構成。
-- フロントエンドはMarkdownの読み込み・レンダリング・UI操作をすべて担当し、Rust側は「CLI引数取得」「ファイル監視」という最小限の役割のみを持つ（薄いバックエンド）。
-- ファイルI/Oはフロントエンドから`@tauri-apps/plugin-fs`を直接呼び出す方式とし、独自のRustコマンドは作らない（読み取り専用のcapabilitiesで権限を絞ることでセキュリティを担保）。
+- フロントエンドはMarkdownの読み込み・レンダリング・UI操作をほぼすべて担当し、Rust側は「CLI引数取得」「ファイル監視」「外部エディタ起動」という薄い役割のみを持つ。
+- ファイルの読み書きはフロントエンドから`@tauri-apps/plugin-fs`を直接呼び出す方式とし、独自のRustコマンドは作らない（読み取り専用のcapabilitiesで権限を絞ることでセキュリティを担保）。プロセス起動が必要な「外部エディタで開く」だけは、任意コマンド実行の穴にしないよう専用のRustコマンドとして実装する。
 
 ```
 ┌─────────────────────────────┐        ┌───────────────────────────┐
@@ -14,6 +14,7 @@
 │  ・状態管理 / UI               │        │  ・CLI引数取得コマンド        │
 │  ・Markdownレンダリング         │        │  ・ファイル監視 (notify)     │
 │  ・fs/dialog/store/opener呼出  │        │  ・file-changedイベント発火  │
+│                                │        │  ・外部エディタプロセス起動   │
 └─────────────────────────────┘        └───────────────────────────┘
 ```
 
@@ -43,6 +44,7 @@ src/
     useHeadings.ts                    # 見出し抽出＋アクティブ見出し追跡
     useSearch.ts                        # 検索状態とmark.js制御
     useOsTheme.ts                         # OSライト/ダーク設定の監視
+    useExternalEditor.ts                    # 外部エディタコマンドの永続化・起動・Ctrl+E
   components/
     Toolbar.tsx           # 開く・最近使ったファイル
     DropZoneOverlay.tsx     # ドラッグ&ドロップ受付
@@ -68,6 +70,7 @@ src/
 | --- | --- |
 | `initial_file_path()` | `std::env::args().nth(1)` を返すだけ。起動時にCLI引数で渡されたパスをフロントエンドへ渡す。 |
 | `start_watching(path)` | 指定ファイルの**親ディレクトリ**を`notify`で監視し、対象ファイルへの変更イベントを検知したら`file-changed`イベント（payload=path）をフロントエンドへemitする。既存の監視は`WatcherState`（`Mutex<Option<RecommendedWatcher>>`）を新しい値で置き換えることで自動的に停止・破棄される。 |
+| `open_in_editor(command, path)` | `std::process::Command::new(command).arg(path).spawn()`を実行するだけの薄いラッパー。`spawn`は起動確認のみで完了を待たない（fire-and-forget）。`command`はフロントエンドの`useExternalEditor`が保持する**ユーザー設定値**（デフォルト`emacs`）のみを渡す設計とし、Markdown本文など信頼できない入力を渡す経路は無い。起動失敗（コマンドが見つからない等）は`Err(String)`にして呼び出し元でエラーバナー表示する。 |
 
 親ディレクトリ単位で監視しているのは、エディタの「一時ファイルへ保存→リネームで置き換え」という一般的な保存方式でもイベントを取りこぼさないため。
 
@@ -81,6 +84,7 @@ src/
 - `fs:scope`に`{"path": "**/*"}`を許可し、ユーザーが選んだ任意の場所のファイルを読み取れるようにする
 - **書き込み・削除系の権限は一切付与しない**（要求仕様3.6「閲覧専用」を権限レベルで担保）
 - `tauri.conf.json`の`app.security.assetProtocol`を`enable:true, scope:["**"]`にし、Rust依存の`tauri` cargo featureに`protocol-asset`を追加。ローカル画像を`convertFileSrc()`経由で表示するために必要。
+- `initial_file_path`/`start_watching`/`open_in_editor`はプラグインコマンドではなく自前実装のTauriコマンドのため、capabilities（ACL）の対象外で常時呼び出し可能。`open_in_editor`は代わりに「フロントエンド側でユーザー設定値以外を渡さない」という実装規約でスコープを絞っている（3.1参照）。
 
 ## 4. フロントエンド設計
 
@@ -98,12 +102,15 @@ src/
 | `useHeadings` | レンダリング後のDOMを`querySelectorAll('h1..h6')`で走査して見出しツリーを構築し、`IntersectionObserver`で画面内に入っている見出しのうち最上部のものを「アクティブ」とする。Markdownの再パースを避け、rehype-slugが振ったidをそのままTOCのリンク先として使う設計。 |
 | `useSearch` | `mark.js`のインスタンスを保持し、クエリ変更のたびに`unmark→mark`。マッチ要素に`.search-match--current`クラスを付け外ししてスクロール。`Ctrl+F`（開く）/`Escape`（閉じる）のグローバルキーハンドリングも内包し、`SearchBar`側の`Enter`/`Shift+Enter`・▲/▼ボタンで前後のマッチへ循環移動する。件数表示（`現在位置 / 総数`）も本フックの状態から算出する。 |
 | `useOsTheme` | `matchMedia('(prefers-color-scheme: dark)')`の変化を購読。CSSの`@media`だけで済まないMermaidの配色切り替え（SVGに色が焼き込まれるため）にのみ使用。 |
+| `useExternalEditor` | エディタコマンド（`settings.json`ストア、デフォルト`emacs`）の読み込み・保存と、`openInEditor()`（Rustの`open_in_editor`呼び出し、失敗時は`setError`）を提供。`Ctrl+E`のグローバルキーハンドリングも内包（`useSearch`と同じパターン）。 |
 
 ### 4.3 コンポーネント構成
 
 `App.tsx`が`DocumentProvider`でラップし、`Toolbar` → `DropZoneOverlay`（内部に検索バー・2ペイン`Group/Panel/Separator`）という構造。2ペインは`react-resizable-panels`の`Group`/`Panel`/`Separator`（サイズ指定は**文字列でパーセント指定**、数値だとpx扱いになる点に注意）。
 
 `MarkdownView`が`react-markdown`本体を描画し、`lib/markdown.tsx`の`getMarkdownComponents(dir)`で生成した`components`マップ（`img`/`a`/`pre`のオーバーライド）を渡す。
+
+`Toolbar`は「開く」「最近使ったファイル」に加えて「エディタで開く」ボタン（`path`が`null`の間は無効化）と、⚙ボタンで開閉する小さな設定パネル（`useExternalEditor`のコマンド文字列をテキスト入力で編集・保存）を持つ。専用の設定画面は設けず、既存のドロップダウン（最近使ったファイル一覧）と同じ「ツールバー直下にポップアップ」パターンを踏襲している。
 
 ## 5. Markdownレンダリングパイプライン
 

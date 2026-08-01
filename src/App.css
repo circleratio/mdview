@@ -97,6 +97,39 @@ button:disabled {
   background-color: rgba(57, 108, 216, 0.1);
 }
 
+.toolbar__editor-settings {
+  position: relative;
+}
+
+.toolbar__editor-settings-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  margin: 0.25rem 0 0;
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 220px;
+  background-color: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.toolbar__editor-settings-panel label {
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+
+.toolbar__editor-settings-panel input {
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  padding: 0.35em 0.5em;
+  font-size: 0.9em;
+}
+
 .toolbar__current-path {
   margin-left: auto;
   opacity: 0.7;
@@ -490,9 +523,16 @@ mark[data-markjs].search-match--current {
     background-color: rgba(255, 255, 255, 0.03);
   }
 
-  .toolbar__recent-list {
+  .toolbar__recent-list,
+  .toolbar__editor-settings-panel {
     background-color: #1f1f1f;
     border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .toolbar__editor-settings-panel input {
+    background-color: #0f0f0f98;
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
   }
 
   .app__error {

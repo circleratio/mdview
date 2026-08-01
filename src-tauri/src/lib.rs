@@ -11,6 +11,7 @@ pub fn run() {
         .manage(watcher::WatcherState::default())
         .invoke_handler(tauri::generate_handler![
             commands::initial_file_path,
+            commands::open_in_editor,
             watcher::start_watching
         ])
         .run(tauri::generate_context!())
