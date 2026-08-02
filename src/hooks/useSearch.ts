@@ -9,7 +9,6 @@ export function useSearch(containerRef: RefObject<HTMLElement | null>) {
   const [query, setQuery] = useState("");
   const [matchCount, setMatchCount] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const markInstanceRef = useRef<InstanceType<typeof Mark> | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const focusMatch = useCallback(
@@ -30,10 +29,7 @@ export function useSearch(containerRef: RefObject<HTMLElement | null>) {
   const clearHighlights = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
-    if (!markInstanceRef.current) {
-      markInstanceRef.current = new Mark(container);
-    }
-    markInstanceRef.current.unmark();
+    new Mark(container).unmark();
     setMatchCount(0);
     setCurrentIndex(0);
   }, [containerRef]);
@@ -45,10 +41,7 @@ export function useSearch(containerRef: RefObject<HTMLElement | null>) {
     }
     const container = containerRef.current;
     if (!container) return;
-    if (!markInstanceRef.current) {
-      markInstanceRef.current = new Mark(container);
-    }
-    const mark = markInstanceRef.current;
+    const mark = new Mark(container);
 
     mark.unmark({
       done: () => {
