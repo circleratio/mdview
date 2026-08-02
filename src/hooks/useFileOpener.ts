@@ -1,18 +1,29 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { exists, readTextFile } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-dialog";
 import { dirname } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
-import { useDocument } from "../state/DocumentContext";
+import { useTabs } from "../state/TabsContext";
 import { useRecentFiles } from "./useRecentFiles";
 
 export function useFileOpener() {
-  const { setDocument, setError, setLoading } = useDocument();
+  const { tabs, addPendingTab, setActiveTab, setTabDocument, setTabError, setTabLoading, removeTab, setAppError } =
+    useTabs();
   const { addRecentFile, removeRecentFile } = useRecentFiles();
 
-  const loadFile = useCallback(
+  // Read via ref (not a dependency) so openTab's identity stays stable across tab-state
+  // changes (e.g. every search keystroke) instead of forcing effects that depend on it
+  // (like DropZoneOverlay's drag&drop subscription) to tear down and resubscribe constantly.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+
+  const openTab = useCallback(
     async (path: string) => {
-      setLoading(true);
+      if (tabsRef.current.some((tab) => tab.path === path)) {
+        setActiveTab(path);
+        return;
+      }
+      addPendingTab(path);
       try {
         const fileExists = await exists(path);
         if (!fileExists) {
@@ -20,18 +31,39 @@ export function useFileOpener() {
         }
         const content = await readTextFile(path);
         const dir = await dirname(path);
-        setDocument(path, dir, content);
+        setTabDocument(path, dir, content);
+        setAppError(null);
         await addRecentFile(path);
         await invoke("start_watching", { path });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        setError(message);
+        removeTab(path);
+        setAppError(message);
         await removeRecentFile(path);
-      } finally {
-        setLoading(false);
       }
     },
-    [setDocument, setError, setLoading, addRecentFile, removeRecentFile],
+    [addPendingTab, setActiveTab, setTabDocument, removeTab, setAppError, addRecentFile, removeRecentFile],
+  );
+
+  const reloadTab = useCallback(
+    async (path: string) => {
+      setTabLoading(path, true);
+      try {
+        const fileExists = await exists(path);
+        if (!fileExists) {
+          throw new Error(`ファイルが見つかりません: ${path}`);
+        }
+        const content = await readTextFile(path);
+        const dir = await dirname(path);
+        setTabDocument(path, dir, content);
+        await invoke("start_watching", { path });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setTabError(path, message);
+        await removeRecentFile(path);
+      }
+    },
+    [setTabLoading, setTabDocument, setTabError, removeRecentFile],
   );
 
   const openViaDialog = useCallback(async () => {
@@ -40,9 +72,9 @@ export function useFileOpener() {
       filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
     });
     if (typeof selected === "string") {
-      await loadFile(selected);
+      await openTab(selected);
     }
-  }, [loadFile]);
+  }, [openTab]);
 
-  return { loadFile, openViaDialog };
+  return { openTab, reloadTab, openViaDialog };
 }

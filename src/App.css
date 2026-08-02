@@ -151,15 +151,76 @@ button:disabled {
   font-size: 0.9em;
 }
 
-.toolbar__current-path {
-  margin-left: auto;
-  opacity: 0.7;
-  font-size: 0.9em;
+.tab-bar {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  background-color: rgba(0, 0, 0, 0.015);
+  flex-shrink: 0;
+}
+
+.tab-bar__tab {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.5rem 0.45rem 0.85rem;
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  flex-shrink: 0;
+  max-width: 220px;
+}
+
+.tab-bar__tab:hover {
+  background-color: rgba(57, 108, 216, 0.08);
+}
+
+.tab-bar__tab--active {
+  background-color: #ffffff;
+  box-shadow: inset 0 -2px 0 #396cd8;
+}
+
+.tab-bar__label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 1;
-  min-width: 0;
+  font-size: 0.88em;
+}
+
+.tab-bar__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  flex-shrink: 0;
+  font-size: 0.85em;
+  line-height: 1;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+}
+
+.tab-bar__close:hover {
+  opacity: 1;
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.app__error--banner {
+  margin: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.tab-pane {
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .drop-zone {
@@ -535,6 +596,27 @@ mark[data-markjs].search-match--current {
   .toolbar {
     border-bottom-color: rgba(255, 255, 255, 0.12);
     background-color: rgba(255, 255, 255, 0.03);
+  }
+
+  .tab-bar {
+    border-bottom-color: rgba(255, 255, 255, 0.12);
+    background-color: rgba(255, 255, 255, 0.02);
+  }
+
+  .tab-bar__tab {
+    border-right-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .tab-bar__tab:hover {
+    background-color: rgba(57, 108, 216, 0.2);
+  }
+
+  .tab-bar__tab--active {
+    background-color: #1f1f1f;
+  }
+
+  .tab-bar__close:hover {
+    background-color: rgba(255, 255, 255, 0.12);
   }
 
   .toolbar__recent-list,

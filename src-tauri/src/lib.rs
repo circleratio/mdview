@@ -13,7 +13,8 @@ pub fn run() {
             commands::initial_file_path,
             commands::open_in_editor,
             commands::finish_startup,
-            watcher::start_watching
+            watcher::start_watching,
+            watcher::stop_watching
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
-import { useDocument } from "../state/DocumentContext";
+import { useTabs } from "../state/TabsContext";
 
 const STORE_FILE = "settings.json";
 const EDITOR_COMMAND_KEY = "editorCommand";
@@ -15,9 +15,9 @@ function getStore(): Promise<Store> {
   return storePromise;
 }
 
-/** Persisted "open in external editor" command, plus the action to launch it (button or Ctrl+E). */
+/** Persisted "open in external editor" command, plus the action to launch it (button or Ctrl+E) against the active tab. */
 export function useExternalEditor() {
-  const { path, setError } = useDocument();
+  const { activeTabPath, setAppError } = useTabs();
   const [editorCommand, setEditorCommandState] = useState(DEFAULT_EDITOR_COMMAND);
 
   useEffect(() => {
@@ -41,13 +41,13 @@ export function useExternalEditor() {
   }, []);
 
   const openInEditor = useCallback(async () => {
-    if (!path) return;
+    if (!activeTabPath) return;
     try {
-      await invoke("open_in_editor", { command: editorCommand, path });
+      await invoke("open_in_editor", { command: editorCommand, path: activeTabPath });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setAppError(err instanceof Error ? err.message : String(err));
     }
-  }, [path, editorCommand, setError]);
+  }, [activeTabPath, editorCommand, setAppError]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {

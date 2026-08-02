@@ -4,7 +4,7 @@ import { useFileOpener } from "../hooks/useFileOpener";
 import { isMarkdownPath } from "../lib/markdownFiles";
 
 export function DropZoneOverlay({ children }: { children: ReactNode }) {
-  const { loadFile } = useFileOpener();
+  const { openTab } = useFileOpener();
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   useEffect(() => {
@@ -22,7 +22,7 @@ export function DropZoneOverlay({ children }: { children: ReactNode }) {
           setIsDraggingOver(false);
           const target = payload.paths.find(isMarkdownPath);
           if (target) {
-            void loadFile(target);
+            void openTab(target);
           }
         }
       })
@@ -38,7 +38,7 @@ export function DropZoneOverlay({ children }: { children: ReactNode }) {
       cancelled = true;
       unlisten?.();
     };
-  }, [loadFile]);
+  }, [openTab]);
 
   return (
     <div className="drop-zone">

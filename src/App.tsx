@@ -1,35 +1,24 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Group, Panel, Separator } from "react-resizable-panels";
-import { DocumentProvider, useDocument } from "./state/DocumentContext";
+import { TabsProvider, useTabs } from "./state/TabsContext";
 import { useFileOpener } from "./hooks/useFileOpener";
 import { useFileWatcher } from "./hooks/useFileWatcher";
-import { useHeadings } from "./hooks/useHeadings";
-import { useSearch } from "./hooks/useSearch";
 import { Toolbar } from "./components/Toolbar";
+import { TabBar } from "./components/TabBar";
+import { TabPane } from "./components/TabPane";
 import { DropZoneOverlay } from "./components/DropZoneOverlay";
-import { Sidebar } from "./components/Sidebar";
-import { MarkdownView } from "./components/MarkdownView";
 import "katex/dist/katex.min.css";
 import "./App.css";
 
 function AppShell() {
-  const { content, dir, error, loading } = useDocument();
-  const { loadFile } = useFileOpener();
+  const { tabs, activeTabPath, appError, setAppError } = useTabs();
+  const { openTab } = useFileOpener();
   useFileWatcher();
-
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const { tree, activeId } = useHeadings(containerRef, content);
-  const search = useSearch(containerRef);
-
-  const handleSelectHeading = useCallback((id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
 
   useEffect(() => {
     invoke<string | null>("initial_file_path").then((initialPath) => {
       if (initialPath) {
-        void loadFile(initialPath);
+        void openTab(initialPath);
       }
     });
   }, []);
@@ -46,25 +35,20 @@ function AppShell() {
 
   return (
     <div className="app">
-      <Toolbar search={search} />
+      <Toolbar />
+      <TabBar />
+      {appError && (
+        <div className="app__error app__error--banner" onClick={() => setAppError(null)} title="クリックで閉じる">
+          {appError}
+        </div>
+      )}
       <DropZoneOverlay>
-        {error && <div className="app__error">{error}</div>}
-        {loading && <div className="app__loading">読み込み中...</div>}
-        {!loading && !error && content === null && (
+        {tabs.length === 0 ? (
           <div className="app__empty">
             ファイルを開いてください（「開く」ボタン、ドラッグ&ドロップ、または最近使ったファイルから選択）
           </div>
-        )}
-        {!loading && content !== null && (
-          <Group orientation="horizontal" className="panels">
-            <Panel defaultSize="22" minSize="12" maxSize="50" className="panel panel--sidebar">
-              <Sidebar nodes={tree} activeId={activeId} onSelect={handleSelectHeading} />
-            </Panel>
-            <Separator className="resize-handle" />
-            <Panel minSize="30" className="panel panel--content">
-              <MarkdownView content={content} dir={dir} containerRef={containerRef} />
-            </Panel>
-          </Group>
+        ) : (
+          tabs.map((tab) => <TabPane key={tab.path} tab={tab} isActive={tab.path === activeTabPath} />)
         )}
       </DropZoneOverlay>
     </div>
@@ -73,9 +57,9 @@ function AppShell() {
 
 function App() {
   return (
-    <DocumentProvider>
+    <TabsProvider>
       <AppShell />
-    </DocumentProvider>
+    </TabsProvider>
   );
 }
 

@@ -1,24 +1,24 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useFileOpener } from "../hooks/useFileOpener";
 import { useRecentFiles } from "../hooks/useRecentFiles";
 import { useExternalEditor } from "../hooks/useExternalEditor";
-import type { useSearch } from "../hooks/useSearch";
-import { useDocument } from "../state/DocumentContext";
+import { useSearchShortcut } from "../hooks/useSearch";
+import { useTabs } from "../state/TabsContext";
 import { basenameForDisplay } from "../lib/displayPath";
 import { FolderIcon, HistoryIcon, PencilIcon } from "./icons";
 
-interface ToolbarProps {
-  search: ReturnType<typeof useSearch>;
-}
-
-export function Toolbar({ search }: ToolbarProps) {
-  const { openViaDialog, loadFile } = useFileOpener();
+export function Toolbar() {
+  const { openViaDialog, openTab } = useFileOpener();
   const { recentFiles } = useRecentFiles();
   const { editorCommand, setEditorCommand, openInEditor } = useExternalEditor();
-  const { path } = useDocument();
+  const { activeTabPath, activeTab, setTabSearchQuery, searchGoToNext, searchGoToPrev, clearTabSearch } = useTabs();
   const [isRecentOpen, setIsRecentOpen] = useState(false);
   const [isEditorSettingsOpen, setIsEditorSettingsOpen] = useState(false);
   const [editorCommandDraft, setEditorCommandDraft] = useState(editorCommand);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  useSearchShortcut(searchInputRef);
+
+  const search = activeTab?.search ?? { query: "", matchCount: 0, currentIndex: 0 };
 
   return (
     <div className="toolbar">
@@ -51,7 +51,7 @@ export function Toolbar({ search }: ToolbarProps) {
                   title={recentPath}
                   onClick={() => {
                     setIsRecentOpen(false);
-                    void loadFile(recentPath);
+                    void openTab(recentPath);
                   }}
                 >
                   {basenameForDisplay(recentPath)}
@@ -64,7 +64,7 @@ export function Toolbar({ search }: ToolbarProps) {
       <button
         type="button"
         className="toolbar__icon-btn"
-        disabled={path === null}
+        disabled={activeTabPath === null}
         title={`${editorCommand} で開く（Ctrl+E）`}
         aria-label="エディタで開く"
         onClick={() => void openInEditor()}
@@ -107,21 +107,22 @@ export function Toolbar({ search }: ToolbarProps) {
       </div>
       <div className="toolbar__search">
         <input
-          ref={search.inputRef}
+          ref={searchInputRef}
           type="text"
           value={search.query}
-          onChange={(e) => search.setQuery(e.target.value)}
+          onChange={(e) => activeTabPath && setTabSearchQuery(activeTabPath, e.target.value)}
           onKeyDown={(e) => {
+            if (!activeTabPath) return;
             if (e.key === "Enter") {
               e.preventDefault();
-              if (e.shiftKey) search.goToPrev();
-              else search.goToNext();
+              if (e.shiftKey) searchGoToPrev(activeTabPath);
+              else searchGoToNext(activeTabPath);
             } else if (e.key === "Escape") {
-              search.clear();
+              clearTabSearch(activeTabPath);
             }
           }}
           placeholder="本文を検索（Ctrl+F）"
-          disabled={path === null}
+          disabled={activeTabPath === null}
           className="toolbar__search-input"
         />
         <span className="toolbar__search-count">
@@ -135,7 +136,7 @@ export function Toolbar({ search }: ToolbarProps) {
           type="button"
           className="toolbar__icon-btn"
           title="前へ"
-          onClick={search.goToPrev}
+          onClick={() => activeTabPath && searchGoToPrev(activeTabPath)}
           disabled={search.matchCount === 0}
           aria-label="前へ"
         >
@@ -145,16 +146,13 @@ export function Toolbar({ search }: ToolbarProps) {
           type="button"
           className="toolbar__icon-btn"
           title="次へ"
-          onClick={search.goToNext}
+          onClick={() => activeTabPath && searchGoToNext(activeTabPath)}
           disabled={search.matchCount === 0}
           aria-label="次へ"
         >
           ▼
         </button>
       </div>
-      <span className="toolbar__current-path" title={path ?? undefined}>
-        {path ? basenameForDisplay(path) : "ファイルが開かれていません"}
-      </span>
     </div>
   );
 }
