@@ -107,7 +107,7 @@ src/
 
 | フック | 役割 |
 | --- | --- |
-| `useFileOpener` | `openTab(path)`と`reloadTab(path)`を提供。`openTab`は既に同じpathのタブがあれば`setActiveTab`するだけ、無ければ`loading:true`の仮タブを追加して即座にアクティブにし、`exists`確認→`readTextFile`→`dirname`取得→`setTabDocument`→`addRecentFile`→Rust`start_watching`呼び出しを行う。失敗時は`removeTab`でタブごと破棄しつつ`setAppError`＋`removeRecentFile`（新規タブが壊れたまま残ることはない）。`reloadTab`は既存タブに対してのみ動作し、失敗時はタブを消さず`setTabError`のみ行う（stale contentの上にエラーバナーを重ねる、単一ファイル版と同じ見た目）。ダイアログ経由(`openViaDialog`)・ドラッグ&ドロップ・最近使ったファイル選択・相対Markdownリンククリックは、いずれもこの`openTab`を呼ぶ薄いラッパー。 |
+| `useFileOpener` | `openTab(path)`と`reloadTab(path)`を提供。`openTab`は既に同じpathのタブがあれば`setActiveTab`した上で`addRecentFile`を呼ぶ（新規タブを作らない場合も「開いた」扱いとして最近使ったファイル一覧の先頭に繰り上げる、requirements.md 3.1）。無ければ`loading:true`の仮タブを追加して即座にアクティブにし、`exists`確認→`readTextFile`→`dirname`取得→`setTabDocument`→`addRecentFile`→Rust`start_watching`呼び出しを行う。失敗時は`removeTab`でタブごと破棄しつつ`setAppError`＋`removeRecentFile`（新規タブが壊れたまま残ることはない）。`reloadTab`は既存タブに対してのみ動作し、失敗時はタブを消さず`setTabError`のみ行う（stale contentの上にエラーバナーを重ねる、単一ファイル版と同じ見た目）。ダイアログ経由(`openViaDialog`)・ドラッグ&ドロップ・最近使ったファイル選択・相対Markdownリンククリックは、いずれもこの`openTab`を呼ぶ薄いラッパー。 |
 | `useFileWatcher` | アプリ起動時に一度だけ`file-changed`イベントを購読し、payloadのpathが現在開いているいずれかのタブのpathと一致すれば、そのタブに対して`reloadTab`を呼ぶ。`tabs`配列は常に最新を参照できるようrefで保持し、タブの増減のたびに購読を張り直したりはしない。 |
 | `useRecentFiles` | `@tauri-apps/plugin-store`に`recentFiles`配列（最大10件、重複除去）を永続化する。変更なし。 |
 | `useHeadings` | レンダリング後のDOMを`querySelectorAll('h1..h6')`で走査して見出しツリーを構築し、`IntersectionObserver`で画面内に入っている見出しのうち最上部のものを「アクティブ」とする。ロジックは変更なく、`TabPane`ごとに1インスタンス生成される。 |

@@ -21,6 +21,9 @@ export function useFileOpener() {
     async (path: string) => {
       if (tabsRef.current.some((tab) => tab.path === path)) {
         setActiveTab(path);
+        // Still counts as "opening" the file for recency purposes, so bump it to the front
+        // of the recent-files list even though no new tab is created.
+        await addRecentFile(path);
         return;
       }
       addPendingTab(path);
