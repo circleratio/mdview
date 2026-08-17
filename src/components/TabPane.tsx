@@ -35,7 +35,7 @@ export function TabPane({ tab, isActive }: TabPaneProps) {
   }, []);
 
   return (
-    <div className="tab-pane" style={{ display: isActive ? "flex" : "none" }}>
+    <div className="tab-pane" data-tab-path={tab.path} style={{ display: isActive ? "flex" : "none" }}>
       <TabDocumentProvider value={{ path: tab.path, dir: tab.dir }}>
         {tab.error && <div className="app__error">{tab.error}</div>}
         {tab.loading && <div className="app__loading">読み込み中...</div>}

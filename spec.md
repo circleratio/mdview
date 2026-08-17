@@ -5,7 +5,7 @@
 ## 1. アーキテクチャ概要
 
 - **Tauri v2**（Rust製バックエンド + OS純正Webview）上に**React 19 + TypeScript + Vite**のフロントエンドを載せる構成。
-- フロントエンドはMarkdownの読み込み・レンダリング・UI操作をほぼすべて担当し、Rust側は「CLI引数取得」「ファイル監視」「外部エディタ起動」という薄い役割のみを持つ。
+- フロントエンドはMarkdownの読み込み・レンダリング・UI操作・Word形式へのエクスポート（requirements.md 3.10、6章参照）をほぼすべて担当し、Rust側は「CLI引数取得」「ファイル監視」「外部エディタ起動」という薄い役割のみを持つ。
 - ファイルの読み書きはフロントエンドから`@tauri-apps/plugin-fs`を直接呼び出す方式とし、独自のRustコマンドは作らない（読み取り専用のcapabilitiesで権限を絞ることでセキュリティを担保）。プロセス起動が必要な「外部エディタで開く」だけは、任意コマンド実行の穴にしないよう専用のRustコマンドとして実装する。
 - 複数ファイルを同時に開く「タブ機能」（requirements.md 3.2）はフロントエンド側の状態管理・UI構成の拡張として実現する。Rust側で変わるのは「ファイル監視」だけで、単一ファイルの監視から**タブごとに独立した複数ファイルの同時監視**に拡張する（3.1参照）。
 
@@ -48,8 +48,9 @@ src/
     useSearch.ts                        # mark.js制御。状態自体はTabsContextのtab.searchに保持（4.4参照）
     useOsTheme.ts                         # OSライト/ダーク設定の監視
     useExternalEditor.ts                    # アクティブタブに対するエディタコマンドの永続化・起動・Ctrl+E
+    useWordExport.ts                          # アクティブタブをWord形式(.docx)へ変換・保存（6章参照）
   components/
-    Toolbar.tsx           # 開く・最近使ったファイル・エディタ・検索欄（アイコンボタン、常にアクティブタブに対して操作）
+    Toolbar.tsx           # 開く・最近使ったファイル・エディタ・Word形式で保存・検索欄（アイコンボタン、常にアクティブタブに対して操作）
     TabBar.tsx               # タブ一覧（横スクロール、×またはCtrl+Wで閉じる）
     TabPane.tsx                # タブ1枚ぶんの2ペイン（Sidebar+MarkdownView）とロード状態表示
     icons.tsx                     # ツールバー用SVGラインアイコン（Folder/History/Pencil）
@@ -65,6 +66,7 @@ src/
     assetSrc.ts                # img src解決（convertFileSrc）
     markdownFiles.ts              # .md/.markdown判定
     displayPath.ts                   # UI表示用のファイル名抽出
+    docxExport.ts                       # Markdown AST → docxパッケージのドキュメントツリーへの変換（6章参照）
 ```
 
 ## 3. Rust側（バックエンド）設計
@@ -77,7 +79,7 @@ src/
 | `start_watching(path)` | 指定ファイルの**親ディレクトリ**を`notify`で監視し、対象ファイルへの変更イベントを検知したら`file-changed`イベント（payload=path）をフロントエンドへemitする。タブごとに呼ばれるため、`WatcherState`は単一の監視ではなく**パスをキーにした`HashMap<String, RecommendedWatcher>`**として複数ファイルを同時に監視できるようにする。同じpathで再度呼んだ場合はそのエントリを新しい値で置き換える（＝再読込のたびに呼んでも安全な冪等操作）。 |
 | `stop_watching(path)` | **新規**。`HashMap`から該当pathのエントリを削除する（`RecommendedWatcher`がdropされ監視が止まる）。タブを閉じたときにフロントエンドから呼ばれ、閉じたタブの監視をリークさせないためのクリーンアップ用コマンド。 |
 | `open_in_editor(command, path)` | `std::process::Command::new(command).arg(path).spawn()`を実行するだけの薄いラッパー。`spawn`は起動確認のみで完了を待たない（fire-and-forget）。`command`はフロントエンドの`useExternalEditor`が保持する**ユーザー設定値**（デフォルト`emacs`）のみを渡す設計とし、Markdown本文など信頼できない入力を渡す経路は無い。`path`は常にアクティブタブのpathを渡す。起動失敗（コマンドが見つからない等）は`Err(String)`にして呼び出し元でエラーバナー表示する。 |
-| `finish_startup(app)` | 起動直後に1回だけフロントエンドから呼ばれる。ウィンドウの`inner_size()`を取得し、+1px→元のサイズに戻す形で`set_size()`を2回呼ぶだけの処理。7.1「既知の落とし穴」参照。 |
+| `finish_startup(app)` | 起動直後に1回だけフロントエンドから呼ばれる。ウィンドウの`inner_size()`を取得し、+1px→元のサイズに戻す形で`set_size()`を2回呼ぶだけの処理。8.1「既知の落とし穴」参照。 |
 
 親ディレクトリ単位で監視しているのは、エディタの「一時ファイルへ保存→リネームで置き換え」という一般的な保存方式でもイベントを取りこぼさないため。タブごとに独立したエントリを持つ設計上、同じディレクトリ内の複数ファイルをそれぞれ別タブで開いた場合はディレクトリ単位で見ると監視が重複するが、実装の単純さを優先し、ディレクトリ単位の参照カウントのような重複排除はあえて行わない。
 
@@ -92,6 +94,7 @@ src/
 - **書き込み・削除系の権限は一切付与しない**（要求仕様3.7「閲覧専用」を権限レベルで担保）
 - `tauri.conf.json`の`app.security.assetProtocol`を`enable:true, scope:["**"]`にし、Rust依存の`tauri` cargo featureに`protocol-asset`を追加。ローカル画像を`convertFileSrc()`経由で表示するために必要。
 - `initial_file_path`/`start_watching`/`stop_watching`/`open_in_editor`/`finish_startup`はプラグインコマンドではなく自前実装のTauriコマンドのため、capabilities（ACL）の対象外で常時呼び出し可能。`open_in_editor`は代わりに「フロントエンド側でユーザー設定値以外を渡さない」という実装規約でスコープを絞っている（3.1参照）。
+- Word形式エクスポート（requirements.md 3.10）のため`dialog:allow-save`・`fs:allow-write-file`を追加する。書き込み対象を保存ダイアログで選んだ1ファイルに限定する考え方は`open_in_editor`と同様に実装規約側で担保する（詳細は6.4参照）。
 
 ## 4. フロントエンド設計
 
@@ -125,7 +128,7 @@ src/
 
 `Toolbar`は「開く」「最近使ったファイル」「エディタで開く」「検索欄」を持つ点は変わらないが、いずれの操作対象も`TabsContext`の`activeTabPath`（＝アクティブタブ）になる。ファイル未オープン時（`tabs.length === 0`）の無効化条件はすべて`activeTabPath === null`に統一される。タブごとのファイル名がタブラベルとして常時見えるようになるため、旧`.toolbar__current-path`（ツールバー右端のファイル名表示、7.1の対策対象だった要素）は廃止する。⚙ボタンによる外部エディタコマンド設定パネルは変更なし。
 
-`MarkdownView`・`MarkdownLink`・`Sidebar`/`TocTree`・`MermaidBlock`はロジック変更なし。`MarkdownView`が受け取る`components`マップのメモ化（`dir`が変わらない限り安定した参照を保つ、7章の落とし穴参照）は、1つの`TabPane`が生涯同じ`path`/`dir`を担当し続ける（タブ切り替えで`dir`が変化することがない）ため、単一ファイル版よりもさらに安定する。
+`MarkdownView`・`MarkdownLink`・`Sidebar`/`TocTree`・`MermaidBlock`はロジック変更なし。`MarkdownView`が受け取る`components`マップのメモ化（`dir`が変わらない限り安定した参照を保つ、8章の落とし穴参照）は、1つの`TabPane`が生涯同じ`path`/`dir`を担当し続ける（タブ切り替えで`dir`が変化することがない）ため、単一ファイル版よりもさらに安定する。
 
 ### 4.4 タブ機能の設計判断
 
@@ -168,7 +171,47 @@ src/
 
 `dir`は自タブの`TabDocumentContext`から取得するため、リンクが含まれるタブ自身のディレクトリを基準に相対パスが解決される。
 
-## 6. パス解決ユーティリティ（`lib/paths.ts`）
+## 6. Word形式エクスポート設計（requirements.md 3.10）
+
+requirements.md 3.10（Word形式で保存）の実装済みの設計をまとめる（実機での動作確認状況はrequirements.md 8節を参照）。
+
+### 6.1 方針
+
+- 変換処理はフロントエンド側で完結させ、Rust側に専用コマンドを追加しない。1章の「ファイルの読み書きはフロントエンドから`plugin-fs`を直接呼び出す」方針を、書き込みを伴うこの機能にもそのまま適用する。
+- 変換元はDOM（レンダリング結果）ではなく、react-markdownが解釈するのと同じMarkdown AST（`remark-gfm`/`remark-math`適用後）とする。DOMを直接docxへ変換するのではなくASTを起点にすることで、`lib/markdown.tsx`のcomponentsマップ（画像パス解決・Mermaidブロック判定など）と処理の前提を揃えられる。
+- Mermaid図・KaTeX数式は、AST上はコードブロック／数式ノードでしかなく、docx側で編集可能なテキスト・図形として変換する対象ではない（requirements.md 3.10）。そのため、これらのみ「レンダリング済みDOMを画像化」という例外経路を取る。
+- コードブロックのシンタックスハイライト配色（`hljs-*`）は変換対象外とし、等幅フォントのプレーンテキストとしてのみ変換する（requirements.md 3.10）。ASTのコードノードからテキストのみを取り出せばよく、DOM側のトークン構造を参照する必要がない。
+- 本文中のリンクは、外部URL（`http:`/`https:`/`mailto:`等スキームを持つもの）のみWordのハイパーリンクとして変換する。相対Markdownリンク・同一文書内アンカー（`#id`）は宛先がWord文書内で意味を持たないため、リンクテキストのみのプレーンテキストにする（`lib/paths.ts`の`hasUriScheme`と同じ判定を流用できる）。
+- 見出しにはWordの見出しスタイル（Heading 1〜6、文書タイトルはTitleスタイル）を付与するが、Wordの目次フィールド（TOC）は自動生成しない（requirements.md 3.10）。
+- フォントは文書タイトル・見出し・本文で固定指定する（requirements.md 3.10）。
+  - 文書タイトル（文書内で最初に現れる`depth === 1`の見出しノード1つのみ）: 「游ゴシック Medium」・18pt・黒
+  - 見出し（それ以外の見出し。文書タイトルを消費した後に現れる`depth === 1`の見出しがあった場合も含む）: 「游ゴシック Medium」・14pt・黒
+  - 本文（見出し・コードブロックを除く段落・リスト・表・引用）: 「游明朝」・10.5pt（色は指定しない＝Word既定）
+  - いずれも`Paragraph`/`TextRun`の`font`・`size`・`color`プロパティで明示指定する。Windows環境では「游ゴシック Medium」は`bold`フラグではなく独立したフォントファミリ名として存在するため、`bold: true`ではなくフォント名そのものを`"游ゴシック Medium"`と指定する。`size`はdocxパッケージの仕様上ハーフポイント単位のため、18pt→`36`、14pt→`28`、10.5pt→`21`を指定する。`color`は`"000000"`を明示指定する（Wordの既定テンプレートのTitle/Headingスタイルはテーマ色由来の色（黒以外）を持つことがあり、スタイル指定だけでは黒にならない場合があるため、ランレベルで上書きする）。コードブロックの等幅フォント（6.1既述）はこの本文フォント指定より優先される。
+  - 「最初の`depth === 1`見出しだけを文書タイトルとする」判定は、AST走査全体で使い回す`docxExport.ts`内の相関用オブジェクト（Mermaid/KaTeXの画像相関に使う`mermaidIndex`/`katexIndex`と同じオブジェクト、6.2参照）に`titleConsumed: boolean`を追加し、最初の1回だけ消費されるフラグとして持たせる。
+- 段落の行間・段落後余白も固定指定する（requirements.md 3.10）。行間の定義は「行の上端から次の行の上端までの幅がフォントサイズの1.5倍」（＝行と行の余白はフォントサイズの0.5倍）であり、Wordの行間「倍数」指定（`lineRule: LineRuleType.AUTO`。フォント固有の既定行送り値が基準で、指定フォントサイズより大きくなることが多い）はこの定義に一致しないため使わない。代わりに`lineRule: LineRuleType.AT_LEAST`を使い、`line`にフォントサイズから直接計算したtwip値（`size`（半ポイント）の値 × 15 ＝ フォントサイズ(pt) × 1.5 × 20）を指定する。文書タイトル・見出し・本文はフォントサイズが異なるため、`line`もそれぞれ計算し直す（タイトル18pt→`540`、見出し14pt→`420`、本文10.5pt→`315`）。`after`（段落後余白、6pt→`120`twip）はすべて共通。
+  - `exact`ではなく`atLeast`を使うのは、本文段落中にインライン数式（KaTeXの画像化、本節既述）が挟まりフォントサイズ基準の行送りより画像が高くなる場合に、その行だけ自動的に高さが広がりクリップを防ぐため。通常のテキストのみの行では指定した行送りぴったりになり、見た目は`exact`と変わらない。
+  - Mermaid/KaTeXの画像のみで構成される段落（テキストランを持たない、本節既述の「レンダリング済みDOMを画像化」した結果を挿入する段落）は、画像の高さがフォントサイズと無関係なため`line`/`lineRule`は設定せず、`after: 120`のみを指定する（Wordの既定の行高さ拡張に任せる）。
+  - コードブロックの各行は既存の`spacing: { before: 0, after: 0 }`のまま据え置き、この行間・段落後余白ルールの対象外とする（詰まったコードらしい見た目を保つため、requirements.md 3.10）。
+
+### 6.2 使用ライブラリ・処理フロー
+
+- **docx生成**: npm `docx`パッケージ（ブラウザ上で`.docx`バイナリを組み立てられるライブラリ）を新規依存として追加する。
+- **Mermaid/KaTeXの画像化**: 変換対象タブが実際にレンダリング済みのSVG（`MermaidBlock`が`innerHTML`に注入したもの）・KaTeX要素を、画面表示と等倍のサイズで一旦`<canvas>`に描画し`toBlob()`でPNG化してdocxへ画像として埋め込む（requirements.md 3.10、高解像度化は行わない）。変換のためだけにMermaid/KaTeXを再実行することはしない。
+- 処理フロー: Toolbarの「Word形式で保存」ボタン押下 → `@tauri-apps/plugin-dialog`の`save()`で保存先パスを取得（既定ファイル名は元のMarkdownファイル名の拡張子を`.docx`に変えたもの、requirements.md 3.10） → `lib/docxExport.ts`がMarkdown ASTとアクティブタブのDOM（画像化対象の取得用）を入力に`.docx`バイナリ（`Uint8Array`）を生成 → `@tauri-apps/plugin-fs`の`writeFile(path, bytes)`で書き込み → 失敗時は`setAppError`でエラーバナー表示（`useFileOpener`の新規オープン失敗時と同じ「タブに属さない一時エラー」の扱い、4.1参照）。
+
+### 6.3 ディレクトリ構成への追加
+
+- `hooks/useWordExport.ts`: 保存ダイアログ表示〜書き込みまでの一連の流れ（`exportActiveTabToDocx()`）を提供。対象は常に`TabsContext`の`activeTabPath`。
+- `lib/docxExport.ts`: Markdown AST → `docx`パッケージのドキュメントツリー構築ロジック。DOM非依存の部分は純粋関数として実装し、`headings.ts`/`paths.ts`同様Vitestでの単体テスト対象とする（10章）。
+- `components/Toolbar.tsx`: 「Word形式で保存」アイコンボタンを追加。ファイル未オープン時（`activeTabPath === null`）は無効化する（他のツールバーボタンと同じ条件、4.3参照）。
+
+### 6.4 権限設計への追加（3.3の補足）
+
+- `dialog:allow-save`（保存先選択ダイアログ）・`fs:allow-write-file`をcapabilitiesに追加する。
+- Tauri v2の`fs`プラグインはread/writeでscopeを分離できないため、`fs:scope`の`{"path": "**/*"}`は書き込みにもそのまま適用される。requirements.md 4節が求める「保存ダイアログでユーザーが指定した保存先ファイルへの書き込み権限に限定し、任意ファイルへの書き込みの穴にしない」は、`open_in_editor`（3.1・3.3）と同じ考え方——**capabilitiesのscopeではなく実装規約でスコープを絞る**——で担保する。具体的には、`writeFile`の呼び出し箇所を`useWordExport`の1箇所のみとし、書き込み先パスには常に直前の`save()`ダイアログの戻り値だけを渡す（Markdown本文やリンク文字列など、信頼できない入力由来の値が書き込み先パスに使われる経路を作らない）。
+
+## 7. パス解決ユーティリティ（`lib/paths.ts`）
 
 Windows専用の同期パス処理。`@tauri-apps/api/path`の非同期APIは`img`/`a`のレンダリング関数内（同期関数）から呼べないため、自前実装とした。
 
@@ -178,13 +221,13 @@ Windows専用の同期パス処理。`@tauri-apps/api/path`の非同期APIは`im
 
 いずれも`lib/paths.test.ts`でVitestによる単体テストを持つ。
 
-## 7. スタイリング／テーマ方針
+## 8. スタイリング／テーマ方針
 
 - ベースの配色・ボタン・ツールバー等は`App.css`内の`@media (prefers-color-scheme: dark)`のみで自動切り替え（JSでのテーマ管理は行わない）。`TabBar`・タブ1つぶんのスタイルもこの方針を踏襲し、新たなテーマ切替の仕組みは導入しない。
 - コードハイライトは`highlight.js`のCSSを直接importせず、`.hljs-*`トークンクラスに対する自前の配色（ライト/ダーク）をApp.cssに定義。バンドルサイズと二重CSS管理を避けるため
 - Mermaidだけは前述の通りSVGに色を焼き込む都合上、`useOsTheme`で明示的に再レンダリングする
 
-### 7.1 既知の落とし穴: WebView2の初回ペイント漏れ
+### 8.1 既知の落とし穴: WebView2の初回ペイント漏れ
 
 ツールバーをアイコン化した際、`margin-left: auto`で右端に寄せた`.toolbar__current-path`（ファイル名表示）が、アプリ起動直後の初回描画では**一切ペイントされない**現象が発生した。`getComputedStyle`・`getBoundingClientRect`・`document.elementFromPoint()`はいずれも正しい値を返す（レイアウト自体は正常）ため、CSSの問題ではなくWebView2側の初回コンポジット漏れと判断した。
 
@@ -194,13 +237,13 @@ Windows専用の同期パス処理。`@tauri-apps/api/path`の非同期APIは`im
 
 > **タブ機能導入に伴う再確認事項**: 上記の不具合が発生していた`.toolbar__current-path`要素自体は4.3の通り廃止する。原因がWebView2の一般的な初回コンポジット漏れなのか、この要素固有の条件（レイアウトの位置・タイミング等）に依存していたのかは未特定のため、`finish_startup`のワークアラウンドが新しいツールバー/`TabBar`構成でも引き続き必要かどうかは実装後に実機で再確認する必要がある。
 
-## 8. ビルド・パッケージング
+## 9. ビルド・パッケージング
 
 - `tauri.conf.json`: `productName: mdview`, ウィンドウ初期サイズ1100×750（最小480×360）, `bundle.targets: ["nsis", "msi"]`
 - 開発: `npm run tauri dev`（Vite devサーバー + `cargo run`）
 - 本番: `npm run tauri build` → `src-tauri/target/release/bundle/{nsis,msi}/`にインストーラ生成
 
-## 9. テスト方針
+## 10. テスト方針
 
 - 純粋関数（`headings.ts`の`buildHeadingTree`、`paths.ts`の各関数）のみVitestで単体テスト化（`npm run test`）
 - UIロジック・Tauri連携部分は自動テスト化せず、実機起動＋スクリーンショットによる手動/半自動確認で担保する方針とした（Tauriアプリ全体をヘッドレスでE2Eテストする標準的な仕組みがないため）。タブ機能（`TabsContext`・`TabBar`・`TabPane`・複数ファイル同時監視）もUI状態とTauri連携が主体のため、この方針を踏襲し実機確認で担保する。「既に開いているファイルは既存タブへ切り替える」判定（`path`の配列検索）のように単純な処理は、既存のvitest対象（純粋関数）ほどの複雑さがないため個別の単体テストは設けない。

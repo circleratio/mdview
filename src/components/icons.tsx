@@ -31,3 +31,14 @@ export function PencilIcon() {
     </svg>
   );
 }
+
+export function WordSaveIcon() {
+  return (
+    <svg {...sharedProps}>
+      <path d="M6 3.5h8.5L18 7v13.5a0.8 0.8 0 0 1-0.8 0.8H6.8A0.8 0.8 0 0 1 6 20.5z" />
+      <path d="M14.5 3.5V7H18" />
+      <path d="M12 11v6" />
+      <path d="M9.3 14.3 12 17l2.7-2.7" />
+    </svg>
+  );
+}

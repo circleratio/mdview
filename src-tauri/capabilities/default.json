@@ -1,15 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window. Read-only: no write/delete permissions are granted, matching the viewer-only requirement.",
+  "description": "Capability for the main window. The opened Markdown file itself is read-only; the only write path is the user-chosen destination of the Word-export save dialog (requirements.md 3.10/4, spec.md 6.4).",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "opener:default",
     "dialog:allow-open",
+    "dialog:allow-save",
     "store:default",
     "fs:allow-exists",
     "fs:allow-read-text-file",
+    "fs:allow-write-file",
     {
       "identifier": "fs:scope",
       "allow": [{ "path": "**/*" }]

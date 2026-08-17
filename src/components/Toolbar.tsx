@@ -2,15 +2,17 @@ import { useRef, useState } from "react";
 import { useFileOpener } from "../hooks/useFileOpener";
 import { useRecentFiles } from "../hooks/useRecentFiles";
 import { useExternalEditor } from "../hooks/useExternalEditor";
+import { useWordExport } from "../hooks/useWordExport";
 import { useSearchShortcut } from "../hooks/useSearch";
 import { useTabs } from "../state/TabsContext";
 import { basenameForDisplay } from "../lib/displayPath";
-import { FolderIcon, HistoryIcon, PencilIcon } from "./icons";
+import { FolderIcon, HistoryIcon, PencilIcon, WordSaveIcon } from "./icons";
 
 export function Toolbar() {
   const { openViaDialog, openTab } = useFileOpener();
   const { recentFiles } = useRecentFiles();
   const { editorCommand, setEditorCommand, openInEditor } = useExternalEditor();
+  const { exportActiveTabToDocx } = useWordExport();
   const { activeTabPath, activeTab, setTabSearchQuery, searchGoToNext, searchGoToPrev, clearTabSearch } = useTabs();
   const [isRecentOpen, setIsRecentOpen] = useState(false);
   const [isEditorSettingsOpen, setIsEditorSettingsOpen] = useState(false);
@@ -70,6 +72,16 @@ export function Toolbar() {
         onClick={() => void openInEditor()}
       >
         <PencilIcon />
+      </button>
+      <button
+        type="button"
+        className="toolbar__icon-btn"
+        disabled={activeTabPath === null}
+        title="Word形式で保存"
+        aria-label="Word形式で保存"
+        onClick={() => void exportActiveTabToDocx()}
+      >
+        <WordSaveIcon />
       </button>
       <div className="toolbar__editor-settings">
         <button
