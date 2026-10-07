@@ -590,6 +590,12 @@ mark[data-markjs].search-match--current {
   border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 }
 
+/* The header's own bottom margin already separates it from the body; drop the first block's
+   top margin (e.g. an h1's 1.6em) so the gap doesn't double up. */
+.markdown-body .front-matter + * {
+  margin-top: 0;
+}
+
 .front-matter__title {
   font-size: 1.9em;
   font-weight: 600;

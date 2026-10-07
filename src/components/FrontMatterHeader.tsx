@@ -18,7 +18,8 @@ export function FrontMatterHeader({ parsed }: FrontMatterHeaderProps) {
   if (parsed.kind === "error") {
     return (
       <div className="front-matter front-matter--error">
-        <p>フロントマターを解釈できませんでした: {parsed.message.split("\n")[0]}</p>
+        {/* yaml's message is "<summary> at line N, column M:" followed by a code excerpt; the raw block below already shows the source. */}
+        <p>フロントマターを解釈できませんでした: {parsed.message.split("\n")[0].replace(/:$/, "")}</p>
         <pre>{parsed.raw}</pre>
       </div>
     );
