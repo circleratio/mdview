@@ -1,19 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { load, type Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
 import { useTabs } from "../state/TabsContext";
+import { getSettingsStore } from "../lib/settingsStore";
 
-const STORE_FILE = "settings.json";
 const EDITOR_COMMAND_KEY = "editorCommand";
 export const DEFAULT_EDITOR_COMMAND = "emacs";
-
-let storePromise: Promise<Store> | null = null;
-function getStore(): Promise<Store> {
-  if (!storePromise) {
-    storePromise = load(STORE_FILE, { autoSave: true });
-  }
-  return storePromise;
-}
 
 /** Persisted "open in external editor" command, plus the action to launch it (button or Ctrl+E) against the active tab. */
 export function useExternalEditor() {
@@ -23,7 +14,7 @@ export function useExternalEditor() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const store = await getStore();
+      const store = await getSettingsStore();
       const value = await store.get<string>(EDITOR_COMMAND_KEY);
       if (!cancelled && value) setEditorCommandState(value);
     })();
@@ -35,7 +26,7 @@ export function useExternalEditor() {
   const setEditorCommand = useCallback(async (command: string) => {
     const trimmed = command.trim();
     if (trimmed === "") return;
-    const store = await getStore();
+    const store = await getSettingsStore();
     await store.set(EDITOR_COMMAND_KEY, trimmed);
     setEditorCommandState(trimmed);
   }, []);
