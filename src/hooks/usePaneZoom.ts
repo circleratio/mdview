@@ -1,7 +1,9 @@
-import { useLayoutEffect, useRef, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { useZoom, type ZoomAnchor } from "../state/ZoomContext";
 
 const ZOOM_VAR = "--content-zoom";
+/** Accumulated pixel delta per zoom step: a mouse notch (~100px) is one step; touchpad pinches send many small deltas. */
+const WHEEL_STEP_THRESHOLD = 50;
 
 interface CapturedAnchor {
   element: Element;
@@ -48,8 +50,35 @@ function restoreAnchor(container: HTMLElement, anchor: CapturedAnchor) {
  * zoom and catch up the next time they become active.
  */
 export function usePaneZoom(containerRef: RefObject<HTMLElement | null>, isActive: boolean, hasContent: boolean) {
-  const { zoomPercent, consumeAnchor } = useZoom();
+  const { zoomPercent, zoomBy, consumeAnchor } = useZoom();
   const appliedZoomRef = useRef<number | null>(null);
+  const wheelAccumRef = useRef(0);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!hasContent || !container) return;
+    const handler = (event: WheelEvent) => {
+      if (!event.ctrlKey) return; // plain wheel keeps scrolling
+      event.preventDefault();
+      if (event.deltaY === 0) return;
+      const direction: 1 | -1 = event.deltaY < 0 ? 1 : -1;
+      const anchor = { x: event.clientX, y: event.clientY };
+      if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) {
+        zoomBy(direction, anchor);
+        return;
+      }
+      // Reversing direction discards whatever was accumulated the other way.
+      if (Math.sign(wheelAccumRef.current) !== Math.sign(event.deltaY)) wheelAccumRef.current = 0;
+      wheelAccumRef.current += event.deltaY;
+      if (Math.abs(wheelAccumRef.current) >= WHEEL_STEP_THRESHOLD) {
+        wheelAccumRef.current = 0;
+        zoomBy(direction, anchor);
+      }
+    };
+    // Registered natively: React's onWheel is passive, so it couldn't preventDefault the scroll.
+    container.addEventListener("wheel", handler, { passive: false });
+    return () => container.removeEventListener("wheel", handler);
+  }, [containerRef, hasContent, zoomBy]);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
