@@ -40,6 +40,7 @@ src/
   state/
     TabsContext.tsx             # 開いている全タブの配列・アクティブタブ・タブ非依存の一時エラーを持つ唯一のグローバル状態
     TabDocumentContext.tsx        # 1タブぶんの{path, dir}を配下（MarkdownLink等）へ渡す読み取り専用コンテキスト
+    ZoomContext.tsx                 # 全タブ共通の本文ズーム倍率・永続化・キーボードショートカット（11章参照）
   hooks/
     useFileOpener.ts            # openTab（新規タブ作成/既存タブへの切替）・reloadTab（監視からの再読込）
     useFileWatcher.ts             # 開いている全タブぶんのfile-changedイベントを購読し該当タブをreloadTab
@@ -49,6 +50,7 @@ src/
     useOsTheme.ts                         # OSライト/ダーク設定の監視
     useExternalEditor.ts                    # アクティブタブに対するエディタコマンドの永続化・起動・Ctrl+E
     useWordExport.ts                          # アクティブタブをWord形式(.docx)へ変換・保存（6章参照）
+    usePaneZoom.ts                              # TabPaneごと: Ctrl+ホイール受付・倍率の適用・スクロール位置の保持（11章参照）
   components/
     Toolbar.tsx           # 開く・最近使ったファイル・エディタ・Word形式で保存・検索欄（アイコンボタン、常にアクティブタブに対して操作）
     TabBar.tsx               # タブ一覧（横スクロール、×またはCtrl+Wで閉じる）
@@ -67,6 +69,8 @@ src/
     markdownFiles.ts              # .md/.markdown判定
     displayPath.ts                   # UI表示用のファイル名抽出
     docxExport.ts                       # Markdown AST → docxパッケージのドキュメントツリーへの変換（6章参照）
+    settingsStore.ts                      # settings.jsonストアの共有ローダー（エディタ設定・ズーム倍率で共用）
+    zoom.ts                                 # ズーム倍率の計算（純粋関数、テスト対象、11章参照）
 ```
 
 ## 3. Rust側（バックエンド）設計
@@ -198,6 +202,7 @@ requirements.md 3.10（Word形式で保存）の実装済みの設計をまと�
 
 - **docx生成**: npm `docx`パッケージ（ブラウザ上で`.docx`バイナリを組み立てられるライブラリ）を新規依存として追加する。
 - **Mermaid/KaTeXの画像化**: 変換対象タブが実際にレンダリング済みのSVG（`MermaidBlock`が`innerHTML`に注入したもの）・KaTeX要素を、画面表示と等倍のサイズで一旦`<canvas>`に描画し`toBlob()`でPNG化してdocxへ画像として埋め込む（requirements.md 3.10、高解像度化は行わない）。変換のためだけにMermaid/KaTeXを再実行することはしない。
+- 本文ズーム（requirements.md 3.11）が100%以外のときは、画像化の間だけ対象タブのズームを一時的に100%へ戻す（11.6参照）。これにより、出力される画像の大きさは表示倍率に左右されない。
 - 処理フロー: Toolbarの「Word形式で保存」ボタン押下 → `@tauri-apps/plugin-dialog`の`save()`で保存先パスを取得（既定ファイル名は元のMarkdownファイル名の拡張子を`.docx`に変えたもの、requirements.md 3.10） → `lib/docxExport.ts`がMarkdown ASTとアクティブタブのDOM（画像化対象の取得用）を入力に`.docx`バイナリ（`Uint8Array`）を生成 → `@tauri-apps/plugin-fs`の`writeFile(path, bytes)`で書き込み → 失敗時は`setAppError`でエラーバナー表示（`useFileOpener`の新規オープン失敗時と同じ「タブに属さない一時エラー」の扱い、4.1参照）。
 
 ### 6.3 ディレクトリ構成への追加
@@ -246,4 +251,84 @@ Windows専用の同期パス処理。`@tauri-apps/api/path`の非同期APIは`im
 ## 10. テスト方針
 
 - 純粋関数（`headings.ts`の`buildHeadingTree`、`paths.ts`の各関数）のみVitestで単体テスト化（`npm run test`）
+- ズーム倍率の計算（`lib/zoom.ts`の`stepZoom`/`normalizeZoom`、11.2参照）も純粋関数としてVitestで単体テスト化する
 - UIロジック・Tauri連携部分は自動テスト化せず、実機起動＋スクリーンショットによる手動/半自動確認で担保する方針とした（Tauriアプリ全体をヘッドレスでE2Eテストする標準的な仕組みがないため）。タブ機能（`TabsContext`・`TabBar`・`TabPane`・複数ファイル同時監視）もUI状態とTauri連携が主体のため、この方針を踏襲し実機確認で担保する。「既に開いているファイルは既存タブへ切り替える」判定（`path`の配列検索）のように単純な処理は、既存のvitest対象（純粋関数）ほどの複雑さがないため個別の単体テストは設けない。
+
+## 11. 表示の拡大・縮小（ズーム）設計（requirements.md 3.11）
+
+### 11.1 方針: 本文要素へのCSS `zoom` プロパティ
+
+本文だけを拡大・縮小する方法として、次の3つを比べた。
+
+| 方法 | 結果 |
+| --- | --- |
+| `.markdown-body`の`font-size`を変える | 文字は`em`指定なので拡大されるが、Mermaid図（SVGにpx単位の`max-width`が付く）・画像・`rem`指定の余白・`max-width: 860px`は変わらない。要求の「図や画像も同じ倍率」を満たせない |
+| `transform: scale()` | 見た目だけが拡大され、レイアウト（折り返し・スクロール量）は元のまま。はみ出しやスクロール量のずれを自前で補正する必要がある |
+| **CSS `zoom`（採用）** | 指定した要素の中身すべて（文字・余白・画像・SVG・KaTeX）がブラウザのページズームと同じように拡大され、折り返しも倍率に合わせて計算し直される。WebView2（Chromium）が対応している |
+
+- `zoom`は`.markdown-body`（`<article>`）に指定し、スクロールコンテナの`.markdown-view`には指定しない。スクロールバーや本文ペインの幅は変わらず、中身だけが大きくなる。
+- CSSは`.markdown-body { zoom: var(--content-zoom, 1); }`とし、倍率の値は各タブの`.markdown-view`要素にCSS変数`--content-zoom`として設定する（11.4参照）。
+- WebView全体のズーム（ブラウザ標準のページズーム）は使わない。Tauri v2の`zoomHotkeysEnabled`は既定値`false`のままとし、`tauri.conf.json`には追加しない。これにより、WebView2自体がCtrl+ホイールやCtrl+`+`/`-`でページ全体を拡大することはない。
+
+### 11.2 倍率の表現（`lib/zoom.ts`）
+
+小数の誤差を避けるため、倍率は**整数のパーセント値**（`zoomPercent`、50〜300、既定100）で持ち、CSSに渡すときだけ`zoomPercent / 100`にする。
+
+- `stepZoom(current, direction: 1 | -1): number` … 10%増減し、50〜300の範囲に収める
+- `normalizeZoom(value: unknown): number` … ストアから読んだ値の検証用。数値でなければ100、範囲外なら範囲内に収め、10の倍数に丸める（設定ファイルを手で書き換えた場合などへの備え）
+- 定数`ZOOM_MIN = 50` / `ZOOM_MAX = 300` / `ZOOM_STEP = 10` / `ZOOM_DEFAULT = 100`
+
+いずれも純粋関数で、Vitestの単体テスト対象とする（10章）。
+
+### 11.3 状態管理と永続化（`state/ZoomContext.tsx`）
+
+倍率は全タブ共通なので、タブごとの状態を持つ`TabsContext`には入れず、独立した`ZoomContext`を作る。`App.tsx`で`TabsProvider`の内側に`ZoomProvider`を置く（キーボードショートカットの有効条件にアクティブタブの有無を使うため）。
+
+- 公開する値と操作: `zoomPercent`、`zoomIn()`、`zoomOut()`、`resetZoom()`、`zoomBy(direction, anchor)`（11.5のホイール用）、`consumeAnchor()`（11.4参照）
+- **永続化**: `settings.json`ストアの`contentZoom`キーに保存する。今は`useExternalEditor`がストアを開く`getStore()`を内部に持っているので、これを`lib/settingsStore.ts`に移し、エディタ設定とズームの両方から使う（同じファイルを2回`load`しないため）。
+  - 起動時に読み込み、`normalizeZoom`を通して反映する。読み込みが終わるまでは100%で表示する。
+  - ホイールを連続で回したときに毎回書き込まないよう、保存は最後の変更から300ms後にまとめて1回行う（デバウンス）。
+- **キーボードショートカット**: 既存の`useSearchShortcut`・`useExternalEditor`と同じく、`window`の`keydown`を購読する。アクティブタブが無いときは何もしない（見えない状態で倍率だけが変わるのを防ぐ）。
+  - 拡大: `Ctrl` + `+` / `=` / `;` / テンキー`+`（`;`は日本語キーボードで`+`と同じキーのため。Chromeと同じ扱い）
+  - 縮小: `Ctrl` + `-` / テンキー`-`
+  - 100%に戻す: `Ctrl` + `0` / テンキー`0`
+  - 判定は`event.key`で行い、テンキーは`event.code`（`NumpadAdd`等）で判定する。該当したときだけ`preventDefault()`する。
+
+### 11.4 倍率の適用とスクロール位置の保持（`hooks/usePaneZoom.ts`）
+
+`TabPane`ごとに`usePaneZoom(containerRef, isActive, hasContent)`を呼ぶ。`containerRef`は既存の`.markdown-view`（スクロールコンテナ）への参照で、`useHeadings`・`useTabSearchSync`と共用する。
+
+**倍率の適用は`useLayoutEffect`の中で、自分でCSS変数を書き換えて行う。** Reactの描画（`style`属性）で変数を変えてしまうと、レイアウト効果が走る時点ではすでに新しい倍率でレイアウトされており、「変更前にどこを見ていたか」を測れない。そこで、次の手順を画面に描画される前に同期的に行う。
+
+1. 変更前の倍率のまま、基準点（11.5）にある要素と、その要素内での位置の割合を記録する
+   - 基準点の要素は`document.elementFromPoint(x, y)`で取得し、`rect.top`と高さに対する割合`(y - rect.top) / rect.height`を記録する
+   - 要素が取れなかった場合や、コンテナの外の要素だった場合は`.markdown-body`自体を使う（その場合は文書全体に対する割合で近似することになる）
+2. `container.style.setProperty("--content-zoom", String(zoomPercent / 100))`で新しい倍率を適用する
+3. 同じ要素の新しい`rect`から、記録した割合の位置がふたたび基準点の`y`に来るよう`scrollTop`を補正する
+
+**非アクティブなタブには、その場では適用しない。** 非アクティブなタブは`display:none`なので、要素の位置を測れず、`scrollTop`も設定できない。各`usePaneZoom`は「自分のコンテナに最後に適用した倍率」をrefに持ち、`isActive`が`true`の間だけ上記の手順を実行する。非アクティブ中に倍率が変わったタブは、次にアクティブになったときの`useLayoutEffect`（タブが表示された直後、古い倍率のまま）で上記の手順を実行する。こうすると、裏で倍率が変わったタブも、表示を切り替えたときに画面上端に見えていた位置を保てる。
+
+- 新しくファイルを開いたタブ（`hasContent`が`false`から`true`に変わったとき）は、スクロール位置が先頭なので補正はせず、倍率の適用だけを行う
+- この処理は既存の`TabPane`の「非アクティブでもマウントしたまま隠す」設計（4.4）にそのまま乗る
+
+### 11.5 ホイール操作と基準点
+
+- `.markdown-view`要素に`wheel`イベントを`addEventListener(..., { passive: false })`で直接登録する。Reactの`onWheel`はpassiveとして登録され`preventDefault()`できないため使わない。
+- `event.ctrlKey`が`false`のときは何もしない（通常のスクロール）。`true`のときは`preventDefault()`してスクロールを止め、倍率を変える。
+- ホイールが効くのは本文ペインの上にカーソルがあるときだけとする。目次・ツールバーの上でCtrl+ホイールしても何も起きない（11.1の通りWebView側のズームも無効のため）。
+- タッチパッドのピンチ操作も、Chromiumでは`ctrlKey: true`のホイールイベントとして届くため、同じく拡大・縮小になる。タッチパッドは1回の操作で細かい`deltaY`を大量に送ってくるので、`deltaY`を積算し、絶対値が50pxを超えるたびに1段階（10%）変える。マウスの1ノッチ（`deltaY`は約100）はそれ1回で1段階になる。1イベントで変えるのは最大1段階とし、向きが変わったら積算値をリセットする。`deltaMode`が行・ページ単位のときは1イベントで1段階とする。
+- **基準点**: ホイールの場合はカーソル位置`(event.clientX, event.clientY)`とし、`zoomBy(direction, anchor)`でContextに預ける。キーボード操作やツールバーの倍率表示クリックでは基準点を指定せず、そのときは本文ペインの上端（横方向は中央）を基準点とする。`usePaneZoom`は`useLayoutEffect`の中で`consumeAnchor()`を呼んで基準点を受け取る（受け取ったら消える）。基準点はrefで持ち、再描画のきっかけにはしない。
+
+### 11.6 他機能との関係
+
+- **目次のジャンプ・アクティブハイライト・検索のスクロール**: どれも`scrollIntoView`と、`root`を`.markdown-view`とした`IntersectionObserver`で動いている。`zoom`はスクロールコンテナの内側に掛かるだけなので、これらはそのまま正しく動く。コードの変更は不要で、実機確認のみ行う。
+- **見出しの`scroll-margin-top: 1rem`**: 本文と一緒に拡大されるが、見た目への影響は小さいためそのままにする。
+- **Word形式で保存（6章）**: 画像化（`rasterizeElementToImageRun`）は`getBoundingClientRect()`と`html-to-image`を使っている。`zoom`が掛かっていると、取得される大きさが表示倍率に応じて変わってしまう。そこで`useWordExport`で、変換の前に対象タブのコンテナの`--content-zoom`を一時的に`1`にし、`scrollTop`を記録しておく。変換が終わったら（失敗した場合も`finally`で）元の倍率と`scrollTop`に戻す。同じ幅・同じ倍率に戻すとレイアウトも元通りになるので、`scrollTop`をそのまま戻せばよい。
+  - トレードオフ: 変換している間（画像が多い文書だと1秒程度）、本文が一時的に100%で表示される。毎回の画像化で倍率を計算して補正する方法もあるが、`html-to-image`が作る複製要素に祖先の`zoom`がどう反映されるかが実装に依存し、確実でない。そのため、確実に100%相当になるこの方法を採用する。
+  - 倍率を戻すのは`useWordExport`が担当し、`usePaneZoom`が覚えている「最後に適用した倍率」は変えない（一時的な上書きなので）。
+
+### 11.7 ツールバーの倍率表示
+
+- 倍率が100%以外のときだけ、ツールバーの検索欄の左に`120%`のようなテキストボタン（`.toolbar__zoom-reset`）を表示する。クリックすると`resetZoom()`する。
+- `title`は「表示倍率（クリックで100%に戻す、Ctrl+0）」とする。
+- 新しいアイコンは追加しない（数値を表示すること自体が役割のため）。
