@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { TabsProvider, useTabs } from "./state/TabsContext";
+import { ZoomProvider } from "./state/ZoomContext";
 import { useFileOpener } from "./hooks/useFileOpener";
 import { useFileWatcher } from "./hooks/useFileWatcher";
 import { Toolbar } from "./components/Toolbar";
@@ -58,7 +59,9 @@ function AppShell() {
 function App() {
   return (
     <TabsProvider>
-      <AppShell />
+      <ZoomProvider>
+        <AppShell />
+      </ZoomProvider>
     </TabsProvider>
   );
 }
