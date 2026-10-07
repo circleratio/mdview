@@ -409,7 +409,8 @@ type ParsedDocument =
   - 題名に`h1`要素を**使わない**。`useHeadings`はコンテナ内の`h1`〜`h6`を目次に拾うため、`h1`にすると目次に出てしまう（requirements.md 3.12「目次には表示しない」）。見た目は`.markdown-body h1`と同じ大きさ・太さをCSSで当てる。
   - `<dl>`は`display: grid; grid-template-columns: max-content 1fr;`の2列にし、`dd`には`overflow-wrap: anywhere`を指定して長い値を折り返す。文字は`0.85em`、色は既存の控えめな文字色（`opacity`）に合わせる。`others`と題名・bylineの間に区切り線（`border-top`）を引く。
   - ヘッダー全体と本文の間は、下に区切り線と余白を設けて、本文と区別できるようにする。
-- `kind: "error"`の場合: `<div class="front-matter front-matter--error">`に「フロントマターを解釈できませんでした: <エラー内容>」と、`raw`を`<pre>`で表示する。配色は既存の`.mermaid-error`等のエラー表示に合わせる。
+  - ヘッダーの直後に来る本文の最初の要素（多くは`h1`）の上余白は0にする（`.markdown-body .front-matter + *`）。ヘッダー自身の下余白と重なって間が空きすぎるのを防ぐ。
+- `kind: "error"`の場合: `<div class="front-matter front-matter--error">`に「フロントマターを解釈できませんでした: <エラー内容>」と、`raw`を`<pre>`で表示する。エラー内容は`yaml`の例外メッセージの1行目（「…at line N, column M」まで。続く該当箇所の抜粋は`raw`と重複するため使わない）とし、末尾の`:`は取り除く。配色は既存の`.mermaid-error`等のエラー表示に合わせる。
 - ライト/ダークの配色は、既存方針（8章）通り`App.css`の`@media (prefers-color-scheme: dark)`で切り替える。
 
 ### 12.5 Word出力（6章への追加）
