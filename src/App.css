@@ -70,6 +70,14 @@ button:disabled {
   line-height: 1;
 }
 
+.toolbar__zoom-reset {
+  height: 34px;
+  min-width: 3.6em;
+  padding: 0 0.5em;
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
 .toolbar-icon {
   width: 17px;
   height: 17px;

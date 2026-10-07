@@ -5,6 +5,8 @@ import { useExternalEditor } from "../hooks/useExternalEditor";
 import { useWordExport } from "../hooks/useWordExport";
 import { useSearchShortcut } from "../hooks/useSearch";
 import { useTabs } from "../state/TabsContext";
+import { useZoom } from "../state/ZoomContext";
+import { ZOOM_DEFAULT } from "../lib/zoom";
 import { basenameForDisplay } from "../lib/displayPath";
 import { FolderIcon, HistoryIcon, PencilIcon, WordSaveIcon } from "./icons";
 
@@ -18,6 +20,7 @@ export function Toolbar() {
   const [isEditorSettingsOpen, setIsEditorSettingsOpen] = useState(false);
   const [editorCommandDraft, setEditorCommandDraft] = useState(editorCommand);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const { zoomPercent, resetZoom } = useZoom();
   useSearchShortcut(searchInputRef);
 
   const search = activeTab?.search ?? { query: "", matchCount: 0, currentIndex: 0 };
@@ -117,6 +120,16 @@ export function Toolbar() {
           </form>
         )}
       </div>
+      {zoomPercent !== ZOOM_DEFAULT && (
+        <button
+          type="button"
+          className="toolbar__zoom-reset"
+          title="表示倍率（クリックで100%に戻す、Ctrl+0）"
+          onClick={resetZoom}
+        >
+          {zoomPercent}%
+        </button>
+      )}
       <div className="toolbar__search">
         <input
           ref={searchInputRef}
