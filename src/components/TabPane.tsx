@@ -3,6 +3,7 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { TabDocumentProvider } from "../state/TabDocumentContext";
 import { useHeadings } from "../hooks/useHeadings";
 import { useTabSearchSync } from "../hooks/useSearch";
+import { usePaneZoom } from "../hooks/usePaneZoom";
 import type { TabState } from "../state/TabsContext";
 import { Sidebar } from "./Sidebar";
 import { MarkdownView } from "./MarkdownView";
@@ -22,6 +23,8 @@ export function TabPane({ tab, isActive }: TabPaneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { tree, activeId } = useHeadings(containerRef, tab.content);
   useTabSearchSync(tab, containerRef);
+  const hasContent = !tab.loading && tab.content !== null;
+  usePaneZoom(containerRef, isActive, hasContent);
 
   const handleSelectHeading = useCallback((id: string) => {
     // Scoped to this tab's own container, not document.getElementById: other open tabs stay

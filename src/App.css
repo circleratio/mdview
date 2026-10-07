@@ -381,6 +381,8 @@ mark[data-markjs].search-match--current {
 }
 
 .markdown-body {
+  /* Content zoom (requirements.md 3.11); the variable is set per tab by usePaneZoom. */
+  zoom: var(--content-zoom, 1);
   max-width: 860px;
   margin: 0 auto;
   padding: 1.5rem 2rem 4rem;
