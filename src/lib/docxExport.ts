@@ -25,6 +25,7 @@ import {
 } from "docx";
 import { hasUriScheme } from "./paths";
 import { resolveAssetSrc } from "./assetSrc";
+import { formatAuthor, parseFrontMatter, toFrontMatterView, type FrontMatterView } from "./frontMatter";
 
 /**
  * Loosely-typed mdast node covering only the fields this converter reads. Using the real
@@ -151,8 +152,11 @@ export interface DocxExportInput {
 
 /** Converts Markdown source into a `.docx` file's raw bytes (requirements.md 3.10 / spec.md 6). */
 export async function convertMarkdownToDocx({ content, dir, container }: DocxExportInput): Promise<Uint8Array> {
+  // Front matter never reaches the Markdown parser; only title/author/date are carried over (spec.md 12.5).
+  const parsed = parseFrontMatter(content);
+  const frontMatter = parsed.kind === "ok" ? toFrontMatterView(parsed.data) : null;
   const processor = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
-  const tree = processor.runSync(processor.parse(content)) as unknown as MdNode;
+  const tree = processor.runSync(processor.parse(parsed.body)) as unknown as MdNode;
 
   const res: RasterResources = {
     dir,
@@ -160,18 +164,45 @@ export async function convertMarkdownToDocx({ content, dir, container }: DocxExp
     mermaidIndex: 0,
     katexEls: container ? Array.from(container.querySelectorAll<HTMLElement>(".katex")) : [],
     katexIndex: 0,
-    titleConsumed: false,
+    // A front matter title takes the document-title slot, so every `#` heading in the body
+    // gets regular heading formatting.
+    titleConsumed: frontMatter?.title != null,
   };
 
-  const children = await convertBlocks(tree.children ?? [], { listLevel: 0, quoteDepth: 0 }, res);
+  const children = [
+    ...buildFrontMatterParagraphs(frontMatter),
+    ...(await convertBlocks(tree.children ?? [], { listLevel: 0, quoteDepth: 0 }, res)),
+  ];
 
+  const author = parsed.kind === "ok" ? formatAuthor(parsed.data.author) : "";
   const doc = new Document({
+    ...(frontMatter?.title != null && { title: frontMatter.title }),
+    ...(author !== "" && { creator: author }),
     numbering: numberingConfig,
     sections: [{ children: children.length > 0 ? children : [new Paragraph({ spacing: BODY_SPACING })] }],
   });
 
   const blob = await Packer.toBlob(doc);
   return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** Title (document-title formatting) and an author/date line, mirroring the on-screen header. Other fields are not exported. */
+function buildFrontMatterParagraphs(view: FrontMatterView | null): Paragraph[] {
+  if (!view) return [];
+  const out: Paragraph[] = [];
+  if (view.title !== null) {
+    out.push(
+      new Paragraph({
+        heading: HeadingLevel.TITLE,
+        spacing: TITLE_SPACING,
+        children: [buildTextRun(view.title, TITLE_MARKS)],
+      }),
+    );
+  }
+  if (view.byline.length > 0) {
+    out.push(new Paragraph({ spacing: BODY_SPACING, children: [buildTextRun(view.byline.join(" ・ "), BODY_MARKS)] }));
+  }
+  return out;
 }
 
 async function convertBlocks(nodes: MdNode[], ctx: BlockContext, res: RasterResources): Promise<FileChild[]> {
