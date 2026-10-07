@@ -59,6 +59,7 @@ src/
     DropZoneOverlay.tsx             # ドラッグ&ドロップ受付
     Sidebar.tsx / TocTree.tsx         # 左ペイン目次
     MarkdownView.tsx                    # 右ペイン本体（react-markdown配線）
+    FrontMatterHeader.tsx                 # 本文先頭のフロントマター表示（12章参照）
     MermaidBlock.tsx                      # Mermaid個別描画
     MarkdownLink.tsx                        # 相対リンク/外部リンクの振り分け
   lib/
@@ -71,6 +72,7 @@ src/
     docxExport.ts                       # Markdown AST → docxパッケージのドキュメントツリーへの変換（6章参照）
     settingsStore.ts                      # settings.jsonストアの共有ローダー（エディタ設定・ズーム倍率で共用）
     zoom.ts                                 # ズーム倍率の計算（純粋関数、テスト対象、11章参照）
+    frontMatter.ts                            # フロントマターの切り出し・表示用データへの変換（純粋関数、テスト対象、12章参照）
 ```
 
 ## 3. Rust側（バックエンド）設計
@@ -252,6 +254,7 @@ Windows専用の同期パス処理。`@tauri-apps/api/path`の非同期APIは`im
 
 - 純粋関数（`headings.ts`の`buildHeadingTree`、`paths.ts`の各関数）のみVitestで単体テスト化（`npm run test`）
 - ズーム倍率の計算（`lib/zoom.ts`の`stepZoom`/`normalizeZoom`、11.2参照）も純粋関数としてVitestで単体テスト化する
+- フロントマターの切り出しと表示用データへの変換（`lib/frontMatter.ts`の`parseFrontMatter`/`toFrontMatterView`、12.2・12.3参照）も同様に単体テスト化する
 - UIロジック・Tauri連携部分は自動テスト化せず、実機起動＋スクリーンショットによる手動/半自動確認で担保する方針とした（Tauriアプリ全体をヘッドレスでE2Eテストする標準的な仕組みがないため）。タブ機能（`TabsContext`・`TabBar`・`TabPane`・複数ファイル同時監視）もUI状態とTauri連携が主体のため、この方針を踏襲し実機確認で担保する。「既に開いているファイルは既存タブへ切り替える」判定（`path`の配列検索）のように単純な処理は、既存のvitest対象（純粋関数）ほどの複雑さがないため個別の単体テストは設けない。
 
 ## 11. 表示の拡大・縮小（ズーム）設計（requirements.md 3.11）
@@ -332,3 +335,94 @@ Windows専用の同期パス処理。`@tauri-apps/api/path`の非同期APIは`im
 - 倍率が100%以外のときだけ、ツールバーの検索欄の左に`120%`のようなテキストボタン（`.toolbar__zoom-reset`）を表示する。クリックすると`resetZoom()`する。
 - `title`は「表示倍率（クリックで100%に戻す、Ctrl+0）」とする。
 - 新しいアイコンは追加しない（数値を表示すること自体が役割のため）。
+
+## 12. フロントマター設計（requirements.md 3.12）
+
+### 12.1 方針: 描画・出力の前に切り出す
+
+フロントマターは、Markdownの解析に渡す**前**に元の文字列から切り出し、残りの本文だけを既存の処理（画面表示のreact-markdown、Word出力のremark）に渡す。
+
+- remarkのプラグイン（`remark-frontmatter`）でASTの`yaml`ノードとして扱う方法もある。ただし、その場合もYAMLの解釈は別途必要で、画面表示とWord出力の2つのパイプラインそれぞれでノードを取り除く処理を書くことになる。最初に1回切り出せば、目次（`useHeadings`はDOM上の`h1`〜`h6`を走査する）・Word出力・本文内検索のどれにも手を入れずに「フロントマターが本文に混ざらない」状態にできる。
+- 切り出しと表示用データへの変換は`lib/frontMatter.ts`に純粋関数としてまとめ、Vitestの単体テスト対象とする（10章）。
+
+### 12.2 切り出し（`parseFrontMatter`）
+
+`parseFrontMatter(content: string): ParsedDocument`
+
+```ts
+type FrontMatterValue = string | FrontMatterValue[] | { [key: string]: FrontMatterValue } | null;
+
+type ParsedDocument =
+  | { kind: "none"; body: string }                                      // フロントマター無し
+  | { kind: "ok"; body: string; data: Record<string, FrontMatterValue> } // 解釈できた
+  | { kind: "error"; body: string; raw: string; message: string };       // YAMLとして解釈できない
+```
+
+- 先頭のBOM（`﻿`）は無視する。行の区切りは`\r?\n`とする（Windowsで作られたファイルを考慮）。
+- 1行目が`---`だけ（末尾の空白は許す）の行であれば、2行目以降で最初に現れる`---`または`...`だけの行までをフロントマターとする。
+  - 閉じの行が見つからない場合は、フロントマターではないとみなし、`kind: "none"`で元の文字列全体を本文とする（従来通りの表示になる）。
+- 本文は閉じの行の次の行から最後までとする。
+- YAMLの解釈には npm `yaml` パッケージを使い、**`schema: "failsafe"`**を指定する。
+  - failsafeスキーマでは、スカラー値はすべて書かれた通りの文字列になる（`date: 2026-10-08`を日付型に、`version: 1.10`を数値`1.1`に変換したりしない）。requirements.md 3.12の「`date`は書かれた文字列をそのまま表示する」を満たし、ほかの項目でも見た目が書いた内容から変わらない。
+  - 配列・オブジェクトはそのまま構造として得られる。
+- 次の場合は`kind: "error"`とし、`raw`（`---`の間の元の文字列）とエラー内容を返す。
+  - YAMLの構文エラー（`yaml`の例外メッセージをそのまま使う）
+  - 最上位がキーと値の組（マッピング）でない場合（例: 文字列や配列だけが書かれている）。メッセージは「フロントマターがキーと値の形式ではありません」とする
+- `---`と`---`の間が空、または空白だけの場合は、`kind: "ok"`、`data: {}`とする（表示するものは何もないが、本文からは取り除く）。
+
+**既知の制限**: フロントマターを持たず、1行目に水平線`---`を書き、その後にも`---`だけの行がある文書は、その間がフロントマターとして解釈される。YAMLとして解釈できなければエラー表示になる。Jekyll・Hugoなど一般的なツールと同じ判定方法であり、許容する。
+
+### 12.3 表示用データへの変換（`toFrontMatterView`）
+
+`toFrontMatterView(data): { title: string | null; byline: string[]; others: [string, string][] }`
+
+- `title`: `data.title`を`formatValue`で文字列化したもの。無い・空文字なら`null`。
+- `byline`: `author`と`date`をこの順に並べた配列。書かれていない・空のものは含めない。
+  - `author`が配列の場合は要素を「、」でつなぐ。
+- `others`: `title`・`author`・`date`以外のキーを、書かれた順に`[キー, 値の文字列]`として並べる。
+- `formatValue(value)`
+  - 文字列 → そのまま
+  - `null`（`key:`のように値が空）→ 空文字
+  - 配列 → 各要素を`formatValue`して`", "`でつなぐ
+  - オブジェクト → `キー: 値`を`", "`でつなぐ（値は`formatValue`で再帰的に変換）
+- キー名の大文字小文字は区別する（`Title`は`title`として扱わない）。YAMLのキーとして一般的な小文字表記に合わせる。
+
+画面表示とWord出力の両方がこの関数を使い、`author`のつなぎ方などの扱いを揃える。
+
+### 12.4 画面表示
+
+- `TabPane`で`useMemo(() => parseFrontMatter(tab.content), [tab.content])`を1回だけ計算し、`MarkdownView`には本文（`body`）と解析結果を渡す。自動リロードで`content`が変わったときだけ再計算される。
+- 新しいコンポーネント`components/FrontMatterHeader.tsx`を、`MarkdownView`の`<article className="markdown-body">`の中、`ReactMarkdown`の直前に置く。`.markdown-body`の中にあるため、ズーム（11章）と本文内検索（mark.jsはコンテナ全体を対象にする）がそのまま効く。
+- `kind: "ok"`の場合の構造:
+
+```html
+<header class="front-matter">
+  <div class="front-matter__title">設計メモ</div>          <!-- titleがあるとき -->
+  <div class="front-matter__byline">藤原 ・ 2026-10-08</div> <!-- bylineが1つ以上あるとき。" ・ "でつなぐ -->
+  <dl class="front-matter__fields">                         <!-- othersが1つ以上あるとき -->
+    <dt>tags</dt><dd>tauri, markdown</dd>
+  </dl>
+</header>
+```
+
+  - `title`・`byline`・`others`がすべて空の場合は`<header>`ごと描画しない。
+  - 題名に`h1`要素を**使わない**。`useHeadings`はコンテナ内の`h1`〜`h6`を目次に拾うため、`h1`にすると目次に出てしまう（requirements.md 3.12「目次には表示しない」）。見た目は`.markdown-body h1`と同じ大きさ・太さをCSSで当てる。
+  - `<dl>`は`display: grid; grid-template-columns: max-content 1fr;`の2列にし、`dd`には`overflow-wrap: anywhere`を指定して長い値を折り返す。文字は`0.85em`、色は既存の控えめな文字色（`opacity`）に合わせる。`others`と題名・bylineの間に区切り線（`border-top`）を引く。
+  - ヘッダー全体と本文の間は、下に区切り線と余白を設けて、本文と区別できるようにする。
+- `kind: "error"`の場合: `<div class="front-matter front-matter--error">`に「フロントマターを解釈できませんでした: <エラー内容>」と、`raw`を`<pre>`で表示する。配色は既存の`.mermaid-error`等のエラー表示に合わせる。
+- ライト/ダークの配色は、既存方針（8章）通り`App.css`の`@media (prefers-color-scheme: dark)`で切り替える。
+
+### 12.5 Word出力（6章への追加）
+
+- `convertMarkdownToDocx`の中で`parseFrontMatter(content)`を呼び、ASTの解析には`body`を渡す。呼び出し側（`useWordExport`）は変更しない。
+- `kind: "ok"`かつ`title`がある場合:
+  - 文書の先頭に、`HeadingLevel.TITLE`・`TITLE_MARKS`・`TITLE_SPACING`（6.1の文書タイトルの書式）で題名の段落を出力する。
+  - `RasterResources.titleConsumed`を最初から`true`にして変換を始める。これで本文の`#`見出しはすべて通常の見出しの書式になる（requirements.md 3.12）。
+- `byline`がある場合は、その次に`BODY_MARKS`・`BODY_SPACING`の段落を1つ出力する。文字列は画面表示と同じく`" ・ "`でつなぐ。
+- `others`は出力しない。
+- `new Document({ title, creator, ... })`で、文書のプロパティの「タイトル」に`title`、「作成者」に`author`（`toFrontMatterView`と同じく「、」でつないだもの）を設定する。無いものは設定しない。
+- `kind: "error"`・`kind: "none"`の場合は、フロントマター部分を除いた本文のみを従来通り変換する（エラー表示はWordには出力しない）。
+
+### 12.6 依存パッケージ
+
+- `yaml`（eemeli/yaml）を`dependencies`に追加する。依存パッケージを持たず、型定義を同梱しており、ブラウザで動く。
