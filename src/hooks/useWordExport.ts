@@ -23,6 +23,28 @@ function findTabContainer(path: string): HTMLElement | null {
   return null;
 }
 
+/**
+ * Runs `task` with the tab's content zoom temporarily reset to 100%, so Mermaid/KaTeX images are
+ * rasterized at their unzoomed size regardless of the display zoom (spec.md 11.6). Restoring the
+ * same zoom at the same pane width reproduces the same layout, so the raw scrollTop can be put back.
+ */
+async function withContentZoomReset<T>(container: HTMLElement | null, task: () => Promise<T>): Promise<T> {
+  const view = container?.querySelector<HTMLElement>(".markdown-view");
+  const zoom = view?.style.getPropertyValue("--content-zoom") ?? "";
+  if (!view || zoom === "" || zoom === "1") return task();
+  const scrollTop = view.scrollTop;
+  view.style.setProperty("--content-zoom", "1");
+  try {
+    return await task();
+  } finally {
+    // If the user zoomed mid-export, usePaneZoom has already applied the new level: keep it.
+    if (view.style.getPropertyValue("--content-zoom") === "1") {
+      view.style.setProperty("--content-zoom", zoom);
+      view.scrollTop = scrollTop;
+    }
+  }
+}
+
 /** Converts the active tab to a `.docx` file and saves it via a native save dialog (requirements.md 3.10, spec.md 6). */
 export function useWordExport() {
   const { activeTab, setAppError } = useTabs();
@@ -37,7 +59,10 @@ export function useWordExport() {
       });
       if (!destination) return;
       const container = findTabContainer(activeTab.path);
-      const bytes = await convertMarkdownToDocx({ content: activeTab.content, dir: activeTab.dir, container });
+      const content = activeTab.content;
+      const bytes = await withContentZoomReset(container, () =>
+        convertMarkdownToDocx({ content, dir: activeTab.dir, container }),
+      );
       await writeFile(destination, bytes);
       setAppError(null);
     } catch (err) {
