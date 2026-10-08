@@ -94,6 +94,18 @@ export function ZoomProvider({ children }: { children: ReactNode }) {
   }, [loaded, zoomPercent]);
 
   useEffect(() => {
+    // Pinch gestures are re-enabled in WebView2 (webview_settings.rs) so a touchpad pinch reaches
+    // usePaneZoom as ctrl+wheel; that also means an unhandled one would visually pinch-zoom the
+    // whole page. Cancel every ctrl+wheel app-wide: the body pane's own listener still sees it
+    // and applies content zoom, while the toolbar/TOC stay unzoomed (requirements.md 3.11).
+    const handler = (event: WheelEvent) => {
+      if (event.ctrlKey) event.preventDefault();
+    };
+    window.addEventListener("wheel", handler, { passive: false });
+    return () => window.removeEventListener("wheel", handler);
+  }, []);
+
+  useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || activeTabPath === null) return;
       // ";" is the "+" key on JIS keyboards (Chrome treats Ctrl+; as zoom in too).

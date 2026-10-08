@@ -27,3 +27,9 @@ tauri-plugin-fs = "2.5.1"
 tauri-plugin-store = "2.4.4"
 notify = "8.2.0"
 
+
+# Used only to re-enable WebView2 pinch gestures (see webview_settings.rs). Versions match the
+# ones wry already depends on, so no extra crates are pulled in.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows = "0.61"

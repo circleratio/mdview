@@ -21,6 +21,12 @@ body,
   margin: 0;
 }
 
+/* WebView2 pinch is re-enabled for touchpad zoom (webview_settings.rs); keep touchscreen pinch
+   from visually zooming the whole page, since only the Markdown body is zoomable. */
+html {
+  touch-action: pan-x pan-y;
+}
+
 button {
   border-radius: 6px;
   border: 1px solid transparent;
