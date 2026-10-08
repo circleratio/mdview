@@ -272,6 +272,11 @@ Windows専用の同期パス処理。`@tauri-apps/api/path`の非同期APIは`im
 - `zoom`は`.markdown-body`（`<article>`）に指定し、スクロールコンテナの`.markdown-view`には指定しない。スクロールバーや本文ペインの幅は変わらず、中身だけが大きくなる。
 - CSSは`.markdown-body { zoom: var(--content-zoom, 1); }`とし、倍率の値は各タブの`.markdown-view`要素にCSS変数`--content-zoom`として設定する（11.4参照）。
 - WebView全体のズーム（ブラウザ標準のページズーム）は使わない。Tauri v2の`zoomHotkeysEnabled`は既定値`false`のままとし、`tauri.conf.json`には追加しない。これにより、WebView2自体がCtrl+ホイールやCtrl+`+`/`-`でページ全体を拡大することはない。
+- **ピンチ操作の再有効化**: Tauri が内部で使う wry は、`zoomHotkeysEnabled`が`false`のとき`IsZoomControlEnabled`と一緒に`IsPinchZoomEnabled`も`false`にする（wry 0.55 `src/webview2/mod.rs`）。この状態では WebView2 がタッチパッドのピンチ操作を受け取った時点で捨ててしまい、ページにはイベントが一切届かない（実機で、ピンチ中のイベントが0件であることを確認した）。そこで、`src-tauri/src/webview_settings.rs`の`enable_pinch_gestures`を`Builder::setup`から呼び、各WebViewの`ICoreWebView2Settings5::SetIsPinchZoomEnabled(true)`で**ピンチ操作だけ**を有効に戻す（`IsZoomControlEnabled`は`false`のまま）。
+  - これにより、タッチパッドのピンチは`ctrlKey: true`のホイールイベントとしてページに届く。
+  - 一方で、ページ側がそのイベントの既定動作を止めないと、WebView2 がページ全体を見た目上拡大（ビジュアルビューポートのピンチズーム）してしまう。そのため`ZoomProvider`で`window`の`wheel`を`{ passive: false }`で購読し、`ctrlKey`付きのものはどこで発生しても`preventDefault()`する。本文ペインの`usePaneZoom`のリスナーは`preventDefault()`の後もイベントを受け取れるので、本文のズームはそのまま動く。目次・ツールバーの上でのピンチは何も起こさない。
+  - タッチスクリーンでのピンチは、ホイールイベントにならず直接ページ全体を拡大してしまう。これを防ぐため、`html`に`touch-action: pan-x pan-y`を指定する。
+  - 依存クレートとして`webview2-com`（0.38）と`windows`（0.61）を Windows 向けにだけ追加する。いずれも wry がすでに使っている版と同じなので、新たなクレートは増えない。
 
 ### 11.2 倍率の表現（`lib/zoom.ts`）
 
@@ -319,7 +324,7 @@ Windows専用の同期パス処理。`@tauri-apps/api/path`の非同期APIは`im
 - `.markdown-view`要素に`wheel`イベントを`addEventListener(..., { passive: false })`で直接登録する。Reactの`onWheel`はpassiveとして登録され`preventDefault()`できないため使わない。
 - `event.ctrlKey`が`false`のときは何もしない（通常のスクロール）。`true`のときは`preventDefault()`してスクロールを止め、倍率を変える。
 - ホイールが効くのは本文ペインの上にカーソルがあるときだけとする。目次・ツールバーの上でCtrl+ホイールしても何も起きない（11.1の通りWebView側のズームも無効のため）。
-- タッチパッドのピンチ操作も、Chromiumでは`ctrlKey: true`のホイールイベントとして届くため、同じく拡大・縮小になる。タッチパッドは1回の操作で細かい`deltaY`を大量に送ってくるので、`deltaY`を積算し、絶対値が50pxを超えるたびに1段階（10%）変える。マウスの1ノッチ（`deltaY`は約100）はそれ1回で1段階になる。1イベントで変えるのは最大1段階とし、向きが変わったら積算値をリセットする。`deltaMode`が行・ページ単位のときは1イベントで1段階とする。
+- タッチパッドのピンチ操作も、`ctrlKey: true`のホイールイベントとして届くため（11.1の再有効化が前提）、同じく拡大・縮小になる。タッチパッドは1回の操作で細かい`deltaY`を大量に送ってくるので、`deltaY`を積算し、絶対値が50pxを超えるたびに1段階（10%）変える。マウスの1ノッチ（`deltaY`は約100）はそれ1回で1段階になる。1イベントで変えるのは最大1段階とし、向きが変わったら積算値をリセットする。`deltaMode`が行・ページ単位のときは1イベントで1段階とする。実機の記録では、ピンチ1回で`|deltaY|`が0.1〜39程度のイベントが20〜70個届き、合計は約80〜160で、1〜3段階変わった。
 - **基準点**: ホイールの場合はカーソル位置`(event.clientX, event.clientY)`とし、`zoomBy(direction, anchor)`でContextに預ける。キーボード操作やツールバーの倍率表示クリックでは基準点を指定せず、そのときは本文ペインの上端（横方向は中央）を基準点とする。`usePaneZoom`は`useLayoutEffect`の中で`consumeAnchor()`を呼んで基準点を受け取る（受け取ったら消える）。基準点はrefで持ち、再描画のきっかけにはしない。
 
 ### 11.6 他機能との関係
