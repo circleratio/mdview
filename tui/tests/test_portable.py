@@ -106,6 +106,33 @@ class BundleRulesTest(unittest.TestCase):
         with self.assertRaises(bundle_tool.BundleError):
             self.bundle()
 
+    def test_early_module_before_imports(self):
+        self.write("deps.py", """\
+            import re
+
+            def dependency_error():
+                return None
+        """)
+        self.write("a.py", "import os\nimport re\nfrom rich.text import Text\n\nA = Text\n")
+        text = self.bundle()
+        check = 'if dependency_error() is not None:\n    sys.exit(f"mdview-tui: {dependency_error()}")'
+        self.assertLess(text.index("import re\n"), text.index("# ---- mdview_tui/deps.py"))
+        self.assertLess(text.index("# ---- mdview_tui/deps.py"), text.index(check))
+        self.assertLess(text.index(check), text.index("from rich.text import Text"))
+        self.assertEqual(text.count("import re\n"), 1)
+        self.assertEqual(text.count("import sys\n"), 1)
+
+    def test_early_module_third_party_import(self):
+        self.write("deps.py", "import textual\n\ndef dependency_error():\n    return None\n")
+        with self.assertRaisesRegex(bundle_tool.BundleError, "standard library"):
+            self.bundle()
+
+    def test_early_module_internal_import(self):
+        self.write("a.py", "A = 1\n")
+        self.write("deps.py", "from mdview_tui.a import A\n\ndef dependency_error():\n    return A\n")
+        with self.assertRaisesRegex(bundle_tool.BundleError, "other modules"):
+            self.bundle()
+
     def test_circular_import(self):
         self.write("a.py", "from mdview_tui.b import B\nA = 1\n")
         self.write("b.py", "from mdview_tui.a import A\nB = 1\n")
@@ -116,8 +143,10 @@ class BundleRulesTest(unittest.TestCase):
 class CommandLineTest(unittest.TestCase):
     """Run the portable file as a script, without the package on sys.path."""
 
-    def run_portable(self, *args):
+    def run_portable(self, *args, pythonpath=None):
         env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        if pythonpath is not None:
+            env["PYTHONPATH"] = pythonpath
         with tempfile.TemporaryDirectory() as cwd:
             return subprocess.run(
                 [sys.executable, str(PORTABLE), *args], cwd=cwd, env=env,
@@ -133,6 +162,19 @@ class CommandLineTest(unittest.TestCase):
         result = self.run_portable("nofile.md")
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stderr, "mdview-tui: nofile.md: No such file or directory\n")
+
+
+    def test_old_textual(self):
+        with tempfile.TemporaryDirectory() as site:
+            (Path(site) / "textual").mkdir()
+            (Path(site) / "textual" / "__init__.py").write_text("", encoding="utf-8")
+            info = Path(site) / "textual-0.47.1.dist-info"
+            info.mkdir()
+            (info / "METADATA").write_text("Metadata-Version: 2.1\nName: textual\nVersion: 0.47.1\n",
+                                           encoding="utf-8")
+            result = self.run_portable("nofile.md", pythonpath=site)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, "mdview-tui: textual>=2.0 is required (found 0.47.1)\n")
 
 
 class PortableAppTest(unittest.IsolatedAsyncioTestCase):

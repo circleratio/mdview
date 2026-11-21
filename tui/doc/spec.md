@@ -47,6 +47,7 @@ mdview/                  # repository root
     │   ├── __main__.py      # python -m mdview_tui
     │   ├── cli.py           # argument parsing, entry point, exit codes
     │   ├── errors.py        # MdviewError
+    │   ├── deps.py          # version check of the required libraries
     │   ├── source.py        # loading file / stdin, re-attaching TTY
     │   ├── parser.py        # markdown-it-py setup, ParsedDocument
     │   ├── frontmatter.py   # YAML front matter splitting and display values
@@ -72,6 +73,7 @@ mdview/                  # repository root
         ├── fixtures/        # sample Markdown files
         ├── helpers.py
         ├── test_cli.py
+        ├── test_deps.py
         ├── test_source.py
         ├── test_render.py
         ├── test_frontmatter.py
@@ -456,6 +458,7 @@ def to_view(data: dict[str, object]) -> FrontMatterView: ...
 
 | 発生箇所 | 扱い |
 |---|---|
+| 依存ライブラリが無い・版が古い | `deps.dependency_error()` が理由を返す。パッケージ版は `cli.main()` が引数の解析の直後（`--help` / `--version` は確認しない）に `MdviewError` として扱い、`mdview-tui: textual>=2.0 is required (found 0.47.1)` のように出して終了コード 1。ポータブル版は外部ライブラリの import より前に同じ確認をして、同じメッセージと終了コードで終わる（このため `--help` / `--version` も含めて確認する） |
 | 起動前（引数・初回読み込み・TTY 付け替え） | `MdviewError` → `cli.main()` が `mdview-tui: <理由>` を stderr に出し、終了コードを返す。TUI は起動しない |
 | 起動後の読み込み失敗（再読込・リンク遷移・履歴移動） | `MdviewError` を捕捉 → ステータスバー通知。現在の表示は維持する |
 | 表示中ファイルの削除 | 「file deleted」と通知し、最後の内容を表示し続ける。ポーリングは継続し、再作成されたら再読込する |
@@ -471,6 +474,9 @@ def to_view(data: dict[str, object]) -> FrontMatterView: ...
 - バージョンは `src/mdview_tui/__init__.py` の `__version__` を唯一の定義とし、`[tool.hatch.version] path = "src/mdview_tui/__init__.py"` で参照する
 - エントリポイント: `[project.scripts] mdview-tui = "mdview_tui.cli:main"`。`python -m mdview_tui` でも起動できるようにする
 - `requires-python = ">=3.10"`
+- 依存ライブラリの版は `src/mdview_tui/deps.py` の `REQUIREMENTS`（配布名・import 名・最低版）でも実行時に確認する。pip でのインストールを経ずに動かす場合（`PYTHONPATH=src`、ポータブル版、apt の古い版）に、分かりにくい `ImportError` ではなく理由を出して終わるため。`pyproject.toml` の `dependencies` と一致させる（`tests/test_deps.py` で検出する）
+  - 版は `importlib.metadata.version()` で調べ、先頭の数字の並び（`2.1.2-1` → `(2, 1, 2)`）で比べる。メタデータが無くても import できるものは確認しない
+  - `deps.py` は標準ライブラリだけを import する
 - 開発環境では pip が無い場合があるため、`PYTHONPATH=src python3 -m mdview_tui` での実行も README に記載する
 
 ### 6.1 ポータブル版
@@ -499,6 +505,7 @@ def main(argv: list[str] | None = None) -> int: ...
 - 次の場合は1ファイルにすると意味が変わるので、生成を失敗させる（理由を stderr に出し終了コード 1）
   - モジュールの最上位で定義される名前（関数・クラス・代入）が、別のモジュールと重なる
   - パッケージ内の import に `as` の別名や `import mdview_tui.xxx` の形がある
+- `deps.py` は例外で、外部ライブラリの import より前に置く。順に、`deps.py` の import（標準ライブラリだけ。`import sys` を必ず含める）、`deps.py` の本体、`if dependency_error() is not None: sys.exit(f"mdview-tui: {dependency_error()}")` を置き、そのあとに残りの import をまとめる（`deps.py` の import と同じものは省く）。`deps.py` が標準ライブラリ以外やパッケージ内のモジュールを import している、または `dependency_error` を定義していない場合は生成を失敗させる
 - 生成結果を `compile()` で構文チェックしてから書き出す。改行は LF、文字コードは UTF-8
 - `--check` では書き出さずに、既存のファイルと生成結果が一致するかだけを調べる（一致すれば 0、違えば理由を出して 1）
 
@@ -515,7 +522,8 @@ def main(argv: list[str] | None = None) -> int: ...
 
 | 対象 | 確認内容 |
 |---|---|
-| `cli` | `--version` 出力と終了コード 0、未知オプションで 2、入力なし（TTY）で 2 とメッセージ、存在しないファイルで 1 とメッセージ |
+| `cli` | `--version` 出力と終了コード 0、未知オプションで 2、入力なし（TTY）で 2 とメッセージ、存在しないファイルで 1 とメッセージ、依存ライブラリの問題で 1 とメッセージ（`--version` は確認しない） |
+| `deps` | 版の数字の取り出しと比較、すべて満たす・古い・無い（複数の問題をまとめる）・メタデータが無いが import できる、実際の環境で問題が無いこと、`REQUIREMENTS` が `pyproject.toml` の `dependencies` と一致すること |
 | `source` | UTF-8 / BOM 付き / CRLF の読み込み、非 UTF-8・ディレクトリ・存在しないファイルのエラーメッセージ |
 | `render` | 各要素（見出し・リスト・タスクリスト・引用・コード・表・水平線・HTML・画像）の出力文字列、幅による折り返し、全角文字を含む折り返し、見出し行番号、リンク位置（折り返し・表セル内を含む）、幅を変えてもソース位置で見出しが対応すること |
 | `frontmatter` | フロントマター無し・閉じの行が無い（`none`）、閉じが `---` / `...`、末尾の空白、本文が同じ行数の空行で始まること、本文の途中の `---` は残ること、値が書かれた通りの文字列になる（`2026-10-08`・`1.10`）、空のフロントマター、構文エラー・最上位が配列/文字列のエラー、`to_view`（title/author/date の取り出し、author の配列、書かれていない項目、その他の項目の順序、配列・入れ子・空の値の文字列化） |
@@ -526,5 +534,5 @@ def main(argv: list[str] | None = None) -> int: ...
 | `history` | push で forward がクリアされる、back/forward の境界（空のとき None） |
 | `watcher` | 変更なし・更新・削除・再作成（一時ディレクトリで検証） |
 | `editor` | `VISUAL` 優先、`EDITOR`、未設定時の OS 別既定、引数付きコマンドの分割 |
-| `portable` | 同梱の `portable/mdview-tui.py` が `bundle()` の結果と一致すること（食い違いの検出）、`PYTHONPATH` を付けずに別ディレクトリから `--version`・存在しないファイル（終了コード 1）が動くこと、モジュールとして読み込み Pilot で起動・スクロール・検索・目次・リンク遷移が動くこと、名前の重なり・別名 import で `bundle()` が失敗すること |
+| `portable` | 同梱の `portable/mdview-tui.py` が `bundle()` の結果と一致すること（食い違いの検出）、`PYTHONPATH` を付けずに別ディレクトリから `--version`・存在しないファイル（終了コード 1）が動くこと、モジュールとして読み込み Pilot で起動・スクロール・検索・目次・リンク遷移が動くこと、名前の重なり・別名 import で `bundle()` が失敗すること、`deps.py` が外部 import より前に置かれ確認の呼び出しが続くこと・`deps.py` が標準ライブラリ以外やパッケージ内を import すると失敗すること、古い textual（偽のパッケージ）を `PYTHONPATH` に置いて実行すると終了コード 1 とメッセージになること |
 | `app` | 起動して本文表示、各スクロールキー、`/` 検索で一致数表示と `n`/`N`、`t` から見出しジャンプ、Tab+Enter で相対リンク遷移と Backspace / `L` で戻る・進む、アンカー・存在しないリンク・非対応リンク・外部リンク、ファイル書き換えで自動再読込・削除通知、`r` 再読込で行維持、フロントマターの表示と検索・自動再読込での更新、エディタ起動後の再読込、`T` でテーマ切替、`?` ヘルプ、リサイズで位置維持、標準入力時の制限 |

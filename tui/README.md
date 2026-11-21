@@ -34,11 +34,18 @@ $ uv tool install .
 $ PYTHONPATH=src python3 -m mdview_tui README.md
 ```
 
-Debian / Ubuntu 系では `apt install python3-textual python3-markdown-it python3-linkify-it python3-yaml` で依存ライブラリを入れられます。
+Debian / Ubuntu 系では `apt install python3-textual python3-markdown-it python3-linkify-it python3-yaml` で依存ライブラリを入れられます。ただし OS の版によっては apt の `python3-textual` が 2.0 より古いため、動きません（Debian 13 は 2.1.2 で動きます）。その場合は venv を作り、`pip install "textual>=2.0" "markdown-it-py[linkify]>=3.0" "PyYAML>=6.0"` で入れてください。
+
+依存ライブラリが無いか版が古いと、起動時に次のように理由を表示して終了コード 1 で終わります。
+
+```console
+$ mdview-tui README.md
+mdview-tui: textual>=2.0 is required (found 0.47.1)
+```
 
 ### ポータブル版（1ファイルで実行する場合）
 
-[`portable/mdview-tui.py`](portable/mdview-tui.py) は、全モジュールを1ファイルにまとめたポータブル版です。依存ライブラリが入っていれば、このファイルだけを好きな場所にコピーして実行できます。機能・オプション・終了コードはインストール版と同じです。
+[`portable/mdview-tui.py`](portable/mdview-tui.py) は、全モジュールを1ファイルにまとめたポータブル版です。依存ライブラリが入っていれば、このファイルだけを好きな場所にコピーして実行できます。機能・オプション・終了コードはインストール版と同じです（依存ライブラリの確認だけは、`--help` / `--version` の場合も含めて最初に行います）。
 
 ```console
 $ python3 portable/mdview-tui.py README.md

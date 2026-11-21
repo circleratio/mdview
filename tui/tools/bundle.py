@@ -28,6 +28,10 @@ OUTPUT = TUI_DIR / "portable" / "mdview-tui.py"
 # Files that must not be bundled: the `python -m` entry point and pure re-export modules.
 EXCLUDE = {"__main__.py", "widgets/__init__.py"}
 MAX_LINE = 100
+# Module placed before the hoisted third-party imports, followed by a call of EARLY_CHECK that
+# exits with its message, so that missing or too old libraries are reported instead of an ImportError.
+EARLY = "deps.py"
+EARLY_CHECK = "dependency_error"
 
 
 class BundleError(Exception):
@@ -172,23 +176,34 @@ def _check_names(ordered: list[_Module]) -> None:
             for alias in node.names:
                 if isinstance(node, ast.ImportFrom):
                     bind(alias.asname or alias.name, f"import {node.module}.{alias.name}", mod.rel)
-                else:
-                    bind(alias.asname or alias.name.split(".")[0], f"import {alias.name}", mod.rel)
+                elif alias.asname:
+                    bind(alias.asname, f"import {alias.name}", mod.rel)
+                else:  # `import a.b` binds the top-level package `a`
+                    top = alias.name.split(".")[0]
+                    bind(top, f"import {top}", mod.rel)
         for name in sorted(_defined_names(mod.tree)):
             bind(name, f"definition in {mod.rel}", mod.rel)
 
 
-def _import_block(ordered: list[_Module]) -> str:
-    plain: set[str] = set()
-    froms: dict[str, set[str]] = {}
-    for mod in ordered:
+def _import_entries(mods: list[_Module]) -> set[tuple[str | None, str]]:
+    """Return (module or None for a plain import, imported text) pairs of the hoisted imports."""
+    entries: set[tuple[str | None, str]] = set()
+    for mod in mods:
         for node in mod.imports:
             for alias in node.names:
                 text = alias.name + (f" as {alias.asname}" if alias.asname else "")
-                if isinstance(node, ast.ImportFrom):
-                    froms.setdefault(node.module or "", set()).add(text)
-                else:
-                    plain.add(text)
+                entries.add((node.module or "" if isinstance(node, ast.ImportFrom) else None, text))
+    return entries
+
+
+def _import_block(entries: set[tuple[str | None, str]]) -> str:
+    plain: set[str] = set()
+    froms: dict[str, set[str]] = {}
+    for module, text in entries:
+        if module is None:
+            plain.add(text)
+        else:
+            froms.setdefault(module, set()).add(text)
 
     def top(module: str) -> str:
         return module.split(".")[0]
@@ -226,6 +241,24 @@ def _requirements(pyproject: Path) -> list[str]:
     return re.findall(r'"([^"]+)"', m.group(1)) if m else []
 
 
+def _early_part(early: _Module) -> tuple[set[tuple[str | None, str]], str]:
+    """Return the imports and the text of the part placed before the third-party imports."""
+    if early.deps:
+        raise BundleError(f"{early.rel}: must not import other modules of the package")
+    entries = _import_entries([early]) | {(None, "sys")}
+    for module, text in entries:
+        if (module or text).split(".")[0] not in sys.stdlib_module_names:
+            raise BundleError(f"{early.rel}: must import only the standard library ('{module or text}')")
+    if EARLY_CHECK not in _defined_names(early.tree):
+        raise BundleError(f"{early.rel}: '{EARLY_CHECK}' is not defined")
+    check = f'if {EARLY_CHECK}() is not None:\n    sys.exit(f"mdview-tui: {{{EARLY_CHECK}()}}")'
+    return entries, f"{_import_block(entries)}\n\n\n{_section(early)}\n\n\n{check}"
+
+
+def _section(mod: _Module) -> str:
+    return f"# ---- {mod.dotted.split('.')[0]}/{mod.rel} ----\n\n{_body(mod)}"
+
+
 def bundle(package_dir: Path, pyproject: Path | None = None) -> str:
     """Return the source text of the single-file version of the package at `package_dir`."""
     package = package_dir.name
@@ -249,8 +282,16 @@ def bundle(package_dir: Path, pyproject: Path | None = None) -> str:
         "from __future__ import annotations",
         "",
     ]
-    parts = ["\n".join(header) + "\n" + _import_block(ordered)]
-    parts += [f"# ---- {package}/{mod.rel} ----\n\n{_body(mod)}" for mod in ordered]
+    early = next((m for m in ordered if m.rel == EARLY), None)
+    rest = [m for m in ordered if m is not early]
+    done: set[tuple[str | None, str]] = set()
+    parts = []
+    if early is not None:
+        done, text = _early_part(early)
+        parts.append(text)
+    parts.append(_import_block(_import_entries(rest) - done))
+    parts[0] = "\n".join(header) + "\n" + parts[0]
+    parts += [_section(mod) for mod in rest]
     parts.append('if __name__ == "__main__":\n    sys.exit(main())')
     text = "\n\n\n".join(parts) + "\n"
     try:

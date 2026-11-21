@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from mdview_tui import __version__
+from mdview_tui.deps import dependency_error
 from mdview_tui.errors import MdviewError
 from mdview_tui.source import load_file, load_stdin, reattach_tty
 
@@ -30,6 +31,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        error = dependency_error()
+        if error is not None:
+            raise MdviewError(error)
         if args.file == "-" or (args.file is None and not _stdin_is_tty()):
             source = load_stdin()
             reattach_tty()

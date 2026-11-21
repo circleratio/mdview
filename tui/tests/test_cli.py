@@ -49,6 +49,12 @@ class CliTest(unittest.TestCase):
         path = str(FIXTURES / "sjis.md")
         self.assertEqual(run([path]), (1, "", f"mdview-tui: {path}: not valid UTF-8\n"))
 
+    def test_dependency_error(self):
+        message = "textual>=2.0 is required (found 0.47.1)"
+        with mock.patch.object(cli, "dependency_error", return_value=message):
+            self.assertEqual(run([str(FIXTURES / "sample.md")]), (1, "", f"mdview-tui: {message}\n"))
+            self.assertEqual(run(["--version"])[0], 0)
+
     def test_runs_app(self):
         with mock.patch("mdview_tui.app.MdviewApp") as app_cls:
             code, _, _ = run(["--theme", "light", "--no-watch", str(FIXTURES / "sample.md")])

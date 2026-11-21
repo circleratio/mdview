@@ -10,16 +10,60 @@
 
 from __future__ import annotations
 
+import importlib.metadata
+import importlib.util
+import re
+import sys
+
+
+# ---- mdview_tui/deps.py ----
+
+# (distribution name, import name, minimum version); keep in sync with pyproject.toml
+REQUIREMENTS = (
+    ("textual", "textual", "2.0"),
+    ("markdown-it-py", "markdown_it", "3.0"),
+    ("PyYAML", "yaml", "6.0"),
+)
+
+
+def version_tuple(version: str) -> tuple[int, ...]:
+    """Return the leading numeric release part of `version`, e.g. "2.1.2-1" -> (2, 1, 2)."""
+    m = re.match(r"\d+(?:\.\d+)*", version.strip())
+    return tuple(int(p) for p in m.group(0).split(".")) if m else ()
+
+
+def _installed_version(dist: str, module: str) -> str | None:
+    """Return the installed version, "" if importable but unknown, or None if missing."""
+    try:
+        return importlib.metadata.version(dist)
+    except importlib.metadata.PackageNotFoundError:
+        return "" if importlib.util.find_spec(module) is not None else None
+
+
+def dependency_error() -> str | None:
+    """Return a message describing missing or too old libraries, or None if all are usable."""
+    problems = []
+    for dist, module, minimum in REQUIREMENTS:
+        found = _installed_version(dist, module)
+        if found is None:
+            problems.append(f"{dist}>={minimum} is required (not installed)")
+        elif found and version_tuple(found) < version_tuple(minimum):
+            problems.append(f"{dist}>={minimum} is required (found {found})")
+    return "; ".join(problems) or None
+
+
+if dependency_error() is not None:
+    sys.exit(f"mdview-tui: {dependency_error()}")
+
+
 import argparse
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 import io
 import os
 from pathlib import Path
-import re
 import shlex
 import subprocess
-import sys
 from typing import Literal
 from urllib.parse import unquote, urlsplit
 import webbrowser
@@ -1802,6 +1846,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        error = dependency_error()
+        if error is not None:
+            raise MdviewError(error)
         if args.file == "-" or (args.file is None and not _stdin_is_tty()):
             source = load_stdin()
             reattach_tty()
