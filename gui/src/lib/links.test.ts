@@ -50,6 +50,8 @@ describe("resolveLinkTarget", () => {
 
   it("keeps absolute paths as they are", () => {
     expect(resolveLinkTarget("D:/notes/x.md", DIR)).toEqual({ kind: "file", path: "D:/notes/x.md", anchor: null });
+    // normalizeUri encodes backslashes, so a Windows path must not be mistaken for a `C:` URL.
+    expect(resolveLinkTarget("D:%5Cnotes%5Cx.md#a", DIR)).toEqual({ kind: "file", path: "D:\\notes\\x.md", anchor: "a" });
   });
 
   it("does not resolve against a missing directory", () => {

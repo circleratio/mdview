@@ -66,7 +66,7 @@ src/
     markdown.tsx      # remark/rehypeプラグイン構成・componentsマップ
     headings.ts          # 見出しツリー構築（純粋関数、テスト対象）
     paths.ts                # 相対パス解決（純粋関数、テスト対象）
-    assetSrc.ts                # img src解決（convertFileSrc）
+    assetSrc.ts                # img src解決（パーセントエンコードの復元＋convertFileSrc、純粋関数部分はテスト対象、5.4参照）
     markdownFiles.ts              # .md/.markdown判定
     links.ts                         # リンク先の判定・パーセントエンコードの復元（純粋関数、テスト対象、5.3参照）
     displayPath.ts                   # UI表示用のファイル名抽出
@@ -156,7 +156,7 @@ src/
 - remarkPlugins: `remark-gfm`, `remark-math`
 - rehypePlugins: `rehype-slug`, `rehype-highlight`, `[rehype-katex, { throwOnError: false }]`
 - componentsマップ:
-  - `img`: `assetSrc.ts`の`resolveAssetSrc(src, dir)`で相対パスを`convertFileSrc()`によるURLへ変換
+  - `img`: `assetSrc.ts`の`resolveAssetSrc(src, dir)`で相対パスを`convertFileSrc()`によるURLへ変換（5.4参照）
   - `a`: `MarkdownLink`コンポーネント（5.3参照）
   - `pre`: 子要素が`language-mermaid`のコードブロックか判定し、該当すれば`<pre>`ごと`MermaidBlock`に差し替える。それ以外は通常の`<pre>`（`rehype-highlight`が付与した`hljs-*`クラスをApp.css内の自前テーマでスタイリング）
 
@@ -179,10 +179,18 @@ src/
 | `file` | 上記以外で、`#`より前のパスが`.md`/`.markdown` | `resolveRelativePath(dir, path)`で絶対パス化し、`exists()`が真なら`openTab(path, { anchor })`を呼ぶ。既に同じファイルが別タブで開いていればそのタブへ切り替わり、開いていなければ新規タブとして開く（4.2参照） |
 | `unsupported` | それ以外（Markdown以外のローカルファイル、空のリンク） | 何もしない |
 
-- **パーセントエンコードの復元**: パスとアンカーはそれぞれ`decodeURIComponent`で元の文字に戻す。不正な並び（単独の`%`など）は元の文字列のまま扱う。Markdownに`%20`と書いた場合だけでなく、日本語などをそのまま書いた場合にも必要になる。react-markdownが使う`mdast-util-to-hast`は、すべてのリンクの`href`を`normalizeUri`でパーセントエンコードするため、`[x](#概要)`はDOM上で`#%E6%A6%82%E8%A6%81`になり、そのままでは`rehype-slug`の見出しid（`概要`）にも実在のファイル名にも一致しない。
+- **パーセントエンコードの復元**: スキームの有無は、復元した後の文字列で判定する（`normalizeUri`は`\`も`%5C`にするため、`C:\docs\x.md`が`C:%5Cdocs%5Cx.md`となり、そのままでは`C:`というスキームのURLに見える）。外部URLとして開く場合は、書かれた通りの文字列を渡す。パスとアンカーはそれぞれ`decodeURIComponent`で元の文字に戻す。不正な並び（単独の`%`など）は元の文字列のまま扱う。Markdownに`%20`と書いた場合だけでなく、日本語などをそのまま書いた場合にも必要になる。react-markdownが使う`mdast-util-to-hast`は、すべてのリンクの`href`を`normalizeUri`でパーセントエンコードするため、`[x](#概要)`はDOM上で`#%E6%A6%82%E8%A6%81`になり、そのままでは`rehype-slug`の見出しid（`概要`）にも実在のファイル名にも一致しない。
 - **アンカー付きのファイルリンク（`other.md#id`）**: `#`でパスとアンカーに分けてから拡張子を判定する。アンカーは`TabState.pendingAnchor`に入れておき、`TabPane`が「アクティブ、かつ本文を描画済み」になった時点の`useEffect`で`scrollToIdWithin`を呼んでから`null`に戻す。新規タブでは、読み込みが終わって本文が描画された直後に移動する。既存タブへの切り替えでは、`usePaneZoom`がタブ切り替え時にスクロール位置を戻す処理（`useLayoutEffect`）の後に実行されるため、その処理で移動が打ち消されることはない。
 
 `dir`は自タブの`TabDocumentContext`から取得するため、リンクが含まれるタブ自身のディレクトリを基準に相対パスが解決される。
+
+### 5.4 画像（`lib/assetSrc.ts`）
+
+`resolveAssetPath(src, dir)`でローカルの絶対パスを求め、`resolveAssetSrc`が`convertFileSrc()`でWebviewから読めるURL（`http://asset.localhost/...`）にする。URL（`https:`・`data:`など）はそのまま使う。
+
+- **パーセントエンコードの復元**: `src`は、まず`decodeLinkPart`（5.3と同じ関数）で元の文字に戻してから、スキームの判定と相対パスの解決を行う。`mdast-util-to-hast`は`src`も`normalizeUri`でパーセントエンコードする（`![](図.png)`は`%E5%9B%B3.png`、`<my image.png>`は`my%20image.png`、`C:\pics\a.png`は`C:%5Cpics%5Ca.png`になる）。さらに`convertFileSrc()`がパス全体を`encodeURIComponent`でもう一度エンコードし、asset protocol（Tauri `protocol/asset.rs`）は1回しか復元しない。そのため、復元せずに渡すと、日本語・空白・`\`を含むパスの画像は「`%E5%9B%B3.png`という名前のファイル」を探すことになり、表示されない。
+- `normalizeUri`は、`%`の後に16進数2桁が続かない場合だけ`%25`にする。そのため`100%.png`は`100%25.png`を経て元の名前に戻る。一方、ファイル名そのものに`%20`のような並びを含むファイルは、空白を含む名前として扱われ表示できない（ブラウザと同じ解釈であり、許容する）。
+- Word形式で保存（6章）の画像の埋め込みも同じ`resolveAssetSrc`を使う。こちらはMarkdown ASTの`url`（`normalizeUri`を通る前の、書かれた通りの文字列）から呼ぶため、Markdownに`%20`などと書かれていた場合にだけ復元が効く。
 
 ## 6. Word形式エクスポート設計（requirement.md 3.10）
 

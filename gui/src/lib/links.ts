@@ -33,7 +33,9 @@ export function resolveLinkTarget(href: string, dir: string | null): LinkTarget 
   if (trimmed.startsWith("#")) {
     return { kind: "anchor", anchor: decodeLinkPart(trimmed.slice(1)) };
   }
-  if (hasUriScheme(trimmed)) {
+  // Check the scheme on the decoded form: normalizeUri turns `C:\docs\x.md` into `C:%5Cdocs%5Cx.md`,
+  // which would otherwise look like a URL with the scheme `C:`. URLs are passed on as written.
+  if (hasUriScheme(decodeLinkPart(trimmed))) {
     return { kind: "external", url: trimmed };
   }
 
