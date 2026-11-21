@@ -243,6 +243,34 @@ class ReloadTest(AppTestBase):
             self.assertEqual(app.view.doc.plain_lines[0], "Edited")
 
 
+class FrontMatterAppTest(AppTestBase):
+    def write(self, title):
+        self.sample.write_text(f"---\ntitle: {title}\n---\n\n# 本文の見出し\n", encoding="utf-8")
+        st = os.stat(self.sample)
+        os.utime(self.sample, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+
+    async def test_front_matter(self):
+        self.write("文書の題名")
+        app = self.make_app()
+        async with app.run_test(size=SIZE) as pilot:
+            await pilot.pause()
+            self.assertEqual(app.view.doc.plain_lines[0], "文書の題名")
+            await pilot.press("t")
+            await pilot.pause()
+            self.assertEqual([h.text for h in app.query_one(TocPanel).headings], ["本文の見出し"])
+            await pilot.press("escape")
+            await pilot.pause()
+            await pilot.press("slash", *"題名", "enter")
+            await pilot.pause()
+            self.assertEqual(len(app.view.matches), 1)
+            self.assertEqual(app.view.matches[0].line, 0)
+            await pilot.press("escape")
+            self.write("新しい題名")
+            app._poll_file()
+            await pilot.pause()
+            self.assertEqual(app.view.doc.plain_lines[0], "新しい題名")
+
+
 class StdinTest(unittest.IsolatedAsyncioTestCase):
     async def test_stdin_source(self):
         app = MdviewApp(Source("# From stdin\n", None, "<stdin>"))

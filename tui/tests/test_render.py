@@ -2,7 +2,8 @@ import unittest
 
 from rich.cells import cell_len
 
-from mdview_tui.parser import parse
+from mdview_tui.frontmatter import ERROR_PREFIX
+from mdview_tui.parser import parse, parse_document
 from mdview_tui.render import render
 from mdview_tui.themes import THEMES
 from tests.helpers import FIXTURES
@@ -10,6 +11,11 @@ from tests.helpers import FIXTURES
 
 def doc_of(text, width=40, theme="dark"):
     return render(parse(text), width, THEMES[theme])
+
+
+def fm_doc_of(text, width=40, theme="dark"):
+    parsed = parse_document(text)
+    return render(parsed.tokens, width, THEMES[theme], parsed.front_matter)
 
 
 class ParserTest(unittest.TestCase):
@@ -162,6 +168,92 @@ class AnchorTest(unittest.TestCase):
         for heading in narrow.headings:
             pos = narrow.source_position(heading.line)
             self.assertEqual(wide.line_for(*pos), wide.heading_by_anchor(heading.anchor).line)
+
+
+FM_SAMPLE = """---
+title: 設計メモ
+author: [山田 太郎, 佐藤 花子]
+date: 2026-10-08
+version: 1.10
+tags: [md, viewer]
+---
+
+# はじめに
+
+本文。
+"""
+
+
+class FrontMatterTest(unittest.TestCase):
+    def test_full_header(self):
+        doc = fm_doc_of(FM_SAMPLE)
+        self.assertEqual(
+            doc.plain_lines[:8],
+            [
+                "設計メモ",
+                "山田 太郎、佐藤 花子 ・ 2026-10-08",
+                "┄" * 40,
+                "version  1.10",
+                "tags     md, viewer",
+                "─" * 40,
+                "",
+                "はじめに",
+            ],
+        )
+
+    def test_title_style_and_no_rule_under_title(self):
+        doc = fm_doc_of("---\ntitle: T\n---\n")
+        self.assertEqual(doc.plain_lines, ["T", "─" * 40])
+        style = doc.lines[0]._segments[0].style
+        self.assertTrue(style.bold)
+        self.assertEqual(style.color, THEMES["dark"].heading[0].color)
+
+    def test_title_is_not_a_heading(self):
+        doc = fm_doc_of(FM_SAMPLE)
+        self.assertEqual([h.text for h in doc.headings], ["はじめに"])
+        self.assertEqual(doc.headings[0].line, 7)
+        self.assertEqual(doc.links, [])
+
+    def test_dotted_rule_only_between_sections(self):
+        only_others = fm_doc_of("---\nversion: 1\n---\n")
+        self.assertEqual(only_others.plain_lines, ["version  1", "─" * 40])
+        only_byline = fm_doc_of("---\ndate: 2026-10-08\n---\n")
+        self.assertEqual(only_byline.plain_lines, ["2026-10-08", "─" * 40])
+
+    def test_long_value_wraps(self):
+        doc = fm_doc_of("---\nnote: " + "x" * 50 + "\n---\n")
+        self.assertEqual(doc.plain_lines[0], "note  " + "x" * 34)
+        self.assertEqual(doc.plain_lines[1], "      " + "x" * 16)
+
+    def test_narrow_width_puts_values_below_keys(self):
+        doc = fm_doc_of("---\nversion: 1.10\ntags: [md, viewer]\n---\n", width=12)
+        self.assertEqual(doc.plain_lines, ["version", "  1.10", "tags", "  md, viewer", "─" * 12])
+
+    def test_empty_front_matter_shows_nothing(self):
+        for text in ("---\n---\n# H\n", "---\ntitle: ''\n---\n# H\n"):
+            with self.subTest(text=text):
+                self.assertEqual(fm_doc_of(text).plain_lines[:2], ["H", "═" * 40])
+
+    def test_error(self):
+        doc = fm_doc_of("---\ntitle: [oops\n---\n\n# Body\n")
+        self.assertTrue(doc.plain_lines[0].startswith(ERROR_PREFIX.rstrip()))
+        self.assertIn("title: [oops", doc.plain_lines)
+        self.assertIn("─" * 40, doc.plain_lines)
+        self.assertEqual([h.text for h in doc.headings], ["Body"])
+
+    def test_no_closing_fence_is_a_rule(self):
+        doc = fm_doc_of("---\ntitle: x\n\n# Body\n")
+        self.assertEqual(doc.plain_lines[0], "─" * 40)
+
+    def test_anchors_use_file_line_numbers(self):
+        doc = fm_doc_of(FM_SAMPLE)
+        heading = doc.headings[0]
+        self.assertEqual(doc.source_position(heading.line), (8, 0))
+        self.assertEqual(doc.source_position(0), (0, 0))
+
+    def test_light_theme(self):
+        doc = fm_doc_of(FM_SAMPLE, theme="light")
+        self.assertEqual(doc.lines[1]._segments[0].style.color, THEMES["light"].meta.color)
 
 
 if __name__ == "__main__":

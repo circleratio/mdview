@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from markdown_it.token import Token
 from rich.segment import Segment
 from rich.style import Style
 from textual import events
@@ -13,6 +12,7 @@ from textual.strip import Strip
 
 from mdview_tui.document import RenderedDoc
 from mdview_tui.keys import bindings
+from mdview_tui.parser import ParsedDocument
 from mdview_tui.render import MIN_WIDTH, render
 from mdview_tui.search import Match, find_all, next_match
 from mdview_tui.themes import THEMES, MdTheme
@@ -62,7 +62,7 @@ class MarkdownView(ScrollView, can_focus=True):
 
     def __init__(self, *, id: str | None = None) -> None:
         super().__init__(id=id)
-        self.tokens: list[Token] = []
+        self.parsed = ParsedDocument([], None)
         self.md_theme: MdTheme = THEMES["dark"]
         self.doc: RenderedDoc | None = None
         self.query_text = ""
@@ -81,9 +81,9 @@ class MarkdownView(ScrollView, can_focus=True):
     def render_width(self) -> int:
         return self.scrollable_content_region.width - MARGIN * 2
 
-    def set_tokens(self, tokens: list[Token], line: int | None = 0) -> None:
+    def set_document(self, parsed: ParsedDocument, line: int | None = 0) -> None:
         """Show new content. line=None keeps the current top line."""
-        self.tokens = tokens
+        self.parsed = parsed
         self._rerender(self.top_line if line is None else line)
 
     def set_theme(self, theme: MdTheme) -> None:
@@ -97,7 +97,7 @@ class MarkdownView(ScrollView, can_focus=True):
             self._pending_line = line
             return
         self._pending_line = None
-        self.doc = render(self.tokens, width, self.md_theme)
+        self.doc = render(self.parsed.tokens, width, self.md_theme, self.parsed.front_matter)
         self.selected_link = None
         self.virtual_size = Size(self.doc.width + MARGIN * 2, len(self.doc.lines))
         self._recompute_matches()

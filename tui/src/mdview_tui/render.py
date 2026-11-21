@@ -20,6 +20,7 @@ from rich.text import Text
 from textual.strip import Strip
 
 from mdview_tui.document import Heading, LinkRegion, RenderedDoc
+from mdview_tui.frontmatter import ERROR_PREFIX, FrontMatter, to_view
 from mdview_tui.slug import SlugRegistry
 from mdview_tui.themes import MdTheme
 
@@ -27,6 +28,8 @@ Line = list[Segment]
 BULLETS = ("•", "◦", "▪")
 TASK_PREFIXES = {"[ ] ": False, "[x] ": True, "[X] ": True}
 MIN_WIDTH = 10
+FIELD_GAP = 2  # cells between a front matter key and its value
+MIN_FIELD_VALUE = 8  # narrower than this, values go below their keys
 
 
 @dataclass
@@ -287,6 +290,51 @@ class _Renderer:
             table.add_row(*cells)
         return _Block(self.lines_of(table, width))
 
+    def front_matter(self, fm: FrontMatter, width: int) -> _Block:
+        """The front matter header shown above the body (no headings, no links)."""
+        theme = self.theme
+        rule = [Segment("─" * width, theme.rule)]
+        if fm.data is None:
+            lines = self.lines_of(Text(ERROR_PREFIX + (fm.error or ""), theme.error, overflow="fold"), width)
+            if fm.raw:
+                lines += self.lines_of(Text(fm.raw, theme.meta, overflow="fold"), width)
+            return _Block(lines + [rule], anchors=[(0, 0)])
+        view = to_view(fm.data)
+        if view.is_empty:
+            return _Block()
+        lines: list[Line] = []
+        if view.title is not None:
+            lines += self.lines_of(Text(view.title, theme.heading[0], overflow="fold"), width)
+        if view.byline:
+            lines += self.lines_of(Text(" ・ ".join(view.byline), theme.meta, overflow="fold"), width)
+        if view.others:
+            if lines:
+                lines.append([Segment("┄" * width, theme.rule)])
+            lines += self.fields(view.others, width)
+        return _Block(lines + [rule], anchors=[(0, 0)])
+
+    def fields(self, fields: list[tuple[str, str]], width: int) -> list[Line]:
+        """Key/value rows. Values wrap with a hanging indent; when the window is too narrow
+        for two columns, each value goes below its key instead (a table would drop it)."""
+        style = self.theme.meta
+        key_width = max(cell_len(key) for key, _ in fields)
+        value_width = width - key_width - FIELD_GAP
+        two_columns = value_width >= max(MIN_FIELD_VALUE, key_width)
+        lines: list[Line] = []
+        for key, value in fields:
+            if two_columns:
+                pad = " " * (key_width - cell_len(key) + FIELD_GAP)
+                body = self.lines_of(Text(value, style, overflow="fold"), value_width) or [[]]
+                lines.append([Segment(key + pad, style), *body[0]])
+                lines.extend([Segment(" " * (key_width + FIELD_GAP)), *line] for line in body[1:])
+            else:
+                lines += self.lines_of(Text(key, style, overflow="fold"), width)
+                if value:
+                    indent = min(FIELD_GAP, width - 1)
+                    body = self.lines_of(Text(value, style, overflow="fold"), width - indent)
+                    lines.extend([Segment(" " * indent), *line] for line in body)
+        return lines
+
     def _cell(self, cell: SyntaxTreeNode) -> Text:
         inline = cell.children[0] if cell.children else None
         return self.inline(inline)
@@ -363,11 +411,17 @@ def _link_regions(lines: list[Line], hrefs: list[str]) -> list[LinkRegion]:
     return [r for r in regions if r.end > r.start]
 
 
-def render(tokens: list[Token], width: int, theme: MdTheme) -> RenderedDoc:
+def render(
+    tokens: list[Token], width: int, theme: MdTheme, front_matter: FrontMatter | None = None
+) -> RenderedDoc:
     width = max(MIN_WIDTH, width)
     renderer = _Renderer(theme, width)
     tree = SyntaxTreeNode(tokens)
-    block = renderer.children(tree.children, width)
+    block = renderer.front_matter(front_matter, width) if front_matter is not None else _Block()
+    body = renderer.children(tree.children, width)
+    if block.lines and body.lines:
+        block.lines.append([])
+    block.extend(body)
     lines = block.lines
     slugs = SlugRegistry()
     headings = [

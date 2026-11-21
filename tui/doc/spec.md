@@ -13,9 +13,9 @@
 ```
  FILE / stdin ──► source.load() ──► Source(text, path)
                                         │
-                         parser.parse() ▼
-                                    tokens
-                                        │  render(tokens, width, theme)
+                parser.parse_document() ▼   (frontmatter.split_front_matter() + parse())
+                          ParsedDocument(tokens, front_matter)
+                                        │  render(tokens, width, theme, front_matter)
                                         ▼
                                   RenderedDoc ──► MarkdownView (render_line)
                                    │   │   │
@@ -44,7 +44,8 @@ mdview/                  # repository root
     │   ├── cli.py           # argument parsing, entry point, exit codes
     │   ├── errors.py        # MdviewError
     │   ├── source.py        # loading file / stdin, re-attaching TTY
-    │   ├── parser.py        # markdown-it-py setup
+    │   ├── parser.py        # markdown-it-py setup, ParsedDocument
+    │   ├── frontmatter.py   # YAML front matter splitting and display values
     │   ├── document.py      # RenderedDoc, Heading, LinkRegion data classes
     │   ├── render.py        # tokens -> RenderedDoc
     │   ├── slug.py          # GitHub-style heading anchors
@@ -69,6 +70,7 @@ mdview/                  # repository root
         ├── test_cli.py
         ├── test_source.py
         ├── test_render.py
+        ├── test_frontmatter.py
         ├── test_slug.py
         ├── test_search.py
         ├── test_links.py
@@ -125,9 +127,17 @@ def reattach_tty() -> None: ...
 ### 3.3 `parser.py`
 
 ```python
+@dataclass(frozen=True)
+class ParsedDocument:
+    tokens: list[Token]
+    front_matter: FrontMatter | None   # None when the text has no front matter
+
 def create_parser() -> MarkdownIt: ...
 def parse(text: str) -> list[Token]: ...
+def parse_document(text: str) -> ParsedDocument: ...
 ```
+
+- `parse_document` は `frontmatter.split_front_matter()` でフロントマターを切り出してから、残りの本文を `parse()` する。アプリが文書を表示するときは常にこちらを使う（3.18）。
 
 - `MarkdownIt("commonmark", {"linkify": True, "html": True})` に `table` / `strikethrough` / `linkify` を有効化する（`linkify` は linkify-it-py を使用）。
 - HTML は「描画しないがテキストとして表示」するため、`html_block` / `html_inline` トークンとして受け取り、レンダラで生テキストとして出力する。
@@ -173,8 +183,11 @@ class RenderedDoc:
 ### 3.5 `render.py`
 
 ```python
-def render(tokens: list[Token], width: int, theme: MdTheme) -> RenderedDoc: ...
+def render(tokens: list[Token], width: int, theme: MdTheme,
+           front_matter: FrontMatter | None = None) -> RenderedDoc: ...
 ```
+
+- `front_matter` があれば、本文より前にフロントマターのブロック（3.18 の表示）を置く。このブロックは見出し（`headings`）・リンクを持たず、`plain_lines` には含める（検索の対象）。`anchors` にはソース行 0 として記録する。
 
 - トークン列を走査してブロックごとに Rich の renderable（`Text` / `Table` / `Syntax` / `Padding` など）を組み立て、`Console.render_lines(renderable, options.update(width=width))` で行に展開し、`Strip` に変換して連結する。
 - ブロックごとの表示:
@@ -309,6 +322,9 @@ class MdTheme:
     code_block_bg: str
     quote: Style
     html: Style
+    rule: Style
+    meta: Style                  # front matter byline and fields
+    error: Style                 # front matter error line
     search_match: Style
     search_current: Style
 
@@ -322,7 +338,7 @@ def toggle(name: str) -> str: ...
 - `virtual_size = Size(width, len(doc.lines))`。
 - `render_line(y)`: `doc.lines[scroll_y + y]` を取り出し、該当行の検索一致・選択中リンクの範囲に `Strip.divide` / スタイル重ね合わせでハイライトを適用して返す。
 - `on_resize`: 幅が変わったら再レンダリング。スクロール位置は **再描画前の先頭行に対応するソース位置**（`source_position` → `line_for`）を維持する。目次パネルの開閉でも表示幅が変わるため、割合ではなくソース位置で合わせる。
-- 公開メソッド: `set_document(doc, keep_line: int | None)`、`scroll_to_line(line)`、`select_next_link(forward)`、`set_matches(matches)`。
+- 公開メソッド: `set_document(parsed: ParsedDocument, line: int | None)`（`line=None` で現在の先頭行を維持）、`scroll_to_line(line)`、`select_next_link(forward)`、`set_matches(matches)`。
 - 選択中のリンクが画面外なら、その位置までスクロールする。Tab 選択の起点は「表示範囲内の最初のリンク」とする。
 - `Enter` の処理はアプリに `LinkActivated(href)` メッセージとして通知する。
 
@@ -347,7 +363,7 @@ class MdviewApp(App):
 
 - 構成: `TocPanel`（非表示）| `MarkdownView` / `SearchInput`（非表示）/ `StatusBar`。
 - キーバインドは `keys.py` の `KEYSPECS`（キー・表示ラベル・アクション・説明・対象 `view`/`app`）に一元定義し、`MdviewApp.BINDINGS` / `MarkdownView.BINDINGS` と `?` のヘルプ画面の両方をここから生成する（二重管理しない）。スクロール・検索移動・リンク選択は `MarkdownView` 側、それ以外はアプリ側に置く（目次パネルや検索欄にフォーカスがあるときに本文がスクロールしないようにするため）。
-- 文書を開く処理は `open_source(source, anchor=None, push=True)` に集約する（初回表示・リンク遷移・履歴移動・再読込で共通）。
+- 文書を開く処理は `open_source(source, anchor=None, push=True)` に集約する（初回表示・リンク遷移・履歴移動・再読込で共通）。表示の直前に `parse_document(source.text)` で解析し、`MarkdownView.set_document()` に渡す。
 - 再読込（自動／`r`／エディタ復帰後）: ファイルを読み直し、`tokens` を作り直して `RenderedDoc` を再生成し、**同じ先頭行番号**（文書が短くなった場合は末尾に丸める）を維持する。検索中なら一致を再計算する。
 - 起動後のエラー（再読込失敗・リンク先なし・エディタ起動失敗など）は終了せずステータスバーに通知する。
 
@@ -364,6 +380,51 @@ def main(argv: list[str] | None = None) -> int: ...
 2. 入力元の決定: `FILE` が `-` または「`FILE` なし かつ stdin が TTY でない」→ `load_stdin()` + `reattach_tty()`。`FILE` なし かつ stdin が TTY → usage と `mdview-tui: error: no input (specify FILE or pipe to stdin)` を出して 2。それ以外は `load_file()`
 3. `MdviewApp(...).run()` を実行し 0 を返す
 4. `MdviewError` を捕捉したら `mdview-tui: <message>` を stderr に出して `exit_code` を返す。`KeyboardInterrupt` は 130
+
+### 3.18 `frontmatter.py`
+
+```python
+@dataclass(frozen=True)
+class FrontMatter:
+    raw: str                       # text between the fences
+    data: dict[str, object] | None # parsed mapping, None on error
+    error: str | None              # one-line reason when it could not be parsed
+
+@dataclass(frozen=True)
+class FrontMatterView:
+    title: str | None
+    byline: list[str]              # author, then date (only non-empty ones)
+    others: list[tuple[str, str]]  # every other key, in the order written
+    is_empty: bool                 # property: nothing to show
+
+def split_front_matter(text: str) -> tuple[FrontMatter | None, str]: ...
+def format_value(value: object) -> str: ...
+def format_author(value: object) -> str: ...
+def to_view(data: dict[str, object]) -> FrontMatterView: ...
+```
+
+- 判定と解釈の規則は GUI 版（`gui/src/lib/frontMatter.ts`）と同じにする。入力の `text` は `source.py` で BOM の除去と改行の LF への正規化が済んでいる。
+  - 1行目が `^---[ \t]*$` に一致し、2行目以降に `^(---|\.\.\.)[ \t]*$` に一致する行がある場合だけフロントマターとする。
+  - 戻り値の本文は、フロントマター部分（開きの行から閉じの行まで）を**同じ行数の空行に置き換えたもの**とする。markdown-it のトークンが持つ行番号（`map`）がファイルの行番号と一致したままになり、再読込でフロントマターの行数が変わっても `source_position` / `line_for` が正しい位置を指す。先頭の空行は Markdown の表示に影響しない。
+- YAML は `yaml.load(raw, Loader=yaml.BaseLoader)` で解釈する。`BaseLoader` は値をすべて書かれた通りの文字列として返すため、`2026-10-08` が日付型に、`1.10` が `1.1` になることはない（GUI 版の failsafe スキーマと同じ結果）。値の無いキー（`key:`）は空文字列になる。
+  - 空のフロントマター（`None` が返る、または空白だけ）は `data={}` とする。
+  - `yaml.YAMLError` は `error` に変換する。理由は例外の `problem`（あれば `problem_mark` から `(line N, column M)` を付ける。行番号はフロントマターの中での位置）とし、`problem` が無い場合は例外メッセージの1行目を使う。最上位が辞書でない場合は `フロントマターがキーと値の形式ではありません` とする（GUI 版と同じ文言）。
+- `format_value`: 文字列はそのまま、配列は要素を `, ` でつなぐ、辞書は `キー: 値` を `, ` でつなぐ（再帰的に適用）。
+- `format_author`: 配列なら空でない要素を「、」でつなぎ、それ以外は `format_value` と同じ。
+- `to_view`: `title`・`author`・`date` を取り出し、空文字列になったものは表示しない（`title` は `None`、`byline` からは除く）。それ以外のキーは書かれた順に `others` に入れる。
+
+表示（`render.py` の `_front_matter()`）:
+
+| 部分 | 表示 |
+|---|---|
+| `title` | `theme.heading[0]`（H1 と同じ色の太字）で折り返し表示。罫線は付けない |
+| `byline` | `theme.meta` で ` ・ ` でつないで1行（幅を超えたら折り返し） |
+| 点線の区切り | 題名または `byline` と、`others` の両方があるときだけ、幅いっぱいの `┄`（`theme.rule`） |
+| `others` | キーと値の2列（`theme.meta`）。キーの列幅は最も長いキーに合わせ、値との間を2セル空ける。値は残りの幅で折り返し、2行目以降は値の列の位置から始める。値の列の幅が8セル未満、またはキーの列より狭くなる場合（目次パネルを開いた狭い端末など）は、キーの行の下に値を2セル字下げして表示する。`rich.table.Table.grid` は幅が足りないと値の列を潰して値が消えるため使わない |
+| 末尾 | 幅いっぱいの `─`（`theme.rule`）。ブロック間の空行の規則により、本文との間に空行が1行入る |
+| 解釈できない場合 | `フロントマターを解釈できませんでした: <error>`（`theme.error`、GUI 版と同じ文言）、続けて元の文字列（`theme.meta`）、末尾の `─` |
+
+表示する項目が1つも無い場合（空のフロントマター、または `title`・`author`・`date` がどれも空でその他の項目も無い場合。`FrontMatterView.is_empty`）はブロック自体を出さない。値が空のその他の項目（`key:`）は、GUI 版と同じくキーだけを表示する。
 
 ## 4. CLI 仕様
 
@@ -397,7 +458,7 @@ def main(argv: list[str] | None = None) -> int: ...
 ## 6. パッケージング方針
 
 - `pyproject.toml`（ビルドバックエンドは `hatchling`、src レイアウト）
-- 依存: `textual>=2.0`、`markdown-it-py[linkify]>=3.0`（`rich` と `pygments` は textual 経由で入る）
+- 依存: `textual>=2.0`、`markdown-it-py[linkify]>=3.0`、`PyYAML>=6.0`（`rich` と `pygments` は textual 経由で入る）
 - バージョンは `src/mdview_tui/__init__.py` の `__version__` を唯一の定義とし、`[tool.hatch.version] path = "src/mdview_tui/__init__.py"` で参照する
 - エントリポイント: `[project.scripts] mdview-tui = "mdview_tui.cli:main"`。`python -m mdview_tui` でも起動できるようにする
 - `requires-python = ">=3.10"`
@@ -413,10 +474,12 @@ def main(argv: list[str] | None = None) -> int: ...
 | `cli` | `--version` 出力と終了コード 0、未知オプションで 2、入力なし（TTY）で 2 とメッセージ、存在しないファイルで 1 とメッセージ |
 | `source` | UTF-8 / BOM 付き / CRLF の読み込み、非 UTF-8・ディレクトリ・存在しないファイルのエラーメッセージ |
 | `render` | 各要素（見出し・リスト・タスクリスト・引用・コード・表・水平線・HTML・画像）の出力文字列、幅による折り返し、全角文字を含む折り返し、見出し行番号、リンク位置（折り返し・表セル内を含む）、幅を変えてもソース位置で見出しが対応すること |
+| `frontmatter` | フロントマター無し・閉じの行が無い（`none`）、閉じが `---` / `...`、末尾の空白、本文が同じ行数の空行で始まること、本文の途中の `---` は残ること、値が書かれた通りの文字列になる（`2026-10-08`・`1.10`）、空のフロントマター、構文エラー・最上位が配列/文字列のエラー、`to_view`（title/author/date の取り出し、author の配列、書かれていない項目、その他の項目の順序、配列・入れ子・空の値の文字列化） |
+| `render`（フロントマター） | 題名・作成者・日付・その他の項目・区切りの出力、点線の区切りの有無、目次（`headings`）に題名が入らないこと、`plain_lines` に含まれること、エラー表示、空のフロントマターで何も出ないこと、フロントマターがあっても本文の見出しの `anchors` のソース行がファイルの行番号と一致すること |
 | `slug` | 英字・記号・日本語・重複見出し |
 | `search` | 大文字小文字無視、全角文字のセル位置、0件、wrap around |
 | `links` | アンカー・外部・相対 `.md`・`#` 付き・URL エンコード・非対応ファイル・stdin 時 |
 | `history` | push で forward がクリアされる、back/forward の境界（空のとき None） |
 | `watcher` | 変更なし・更新・削除・再作成（一時ディレクトリで検証） |
 | `editor` | `VISUAL` 優先、`EDITOR`、未設定時の OS 別既定、引数付きコマンドの分割 |
-| `app` | 起動して本文表示、各スクロールキー、`/` 検索で一致数表示と `n`/`N`、`t` から見出しジャンプ、Tab+Enter で相対リンク遷移と Backspace / `L` で戻る・進む、アンカー・存在しないリンク・非対応リンク・外部リンク、ファイル書き換えで自動再読込・削除通知、`r` 再読込で行維持、エディタ起動後の再読込、`T` でテーマ切替、`?` ヘルプ、リサイズで位置維持、標準入力時の制限 |
+| `app` | 起動して本文表示、各スクロールキー、`/` 検索で一致数表示と `n`/`N`、`t` から見出しジャンプ、Tab+Enter で相対リンク遷移と Backspace / `L` で戻る・進む、アンカー・存在しないリンク・非対応リンク・外部リンク、ファイル書き換えで自動再読込・削除通知、`r` 再読込で行維持、フロントマターの表示と検索・自動再読込での更新、エディタ起動後の再読込、`T` でテーマ切替、`?` ヘルプ、リサイズで位置維持、標準入力時の制限 |

@@ -21,6 +21,8 @@ class MdTheme:
     quote: Style
     html: Style
     rule: Style
+    meta: Style  # front matter byline and fields
+    error: Style  # front matter error line
     search_match: Style
     search_current: Style
 
@@ -45,6 +47,8 @@ THEMES: dict[str, MdTheme] = {
         quote=Style.parse("italic #9da5b4"),
         html=Style.parse("#7f848e"),
         rule=Style.parse("#5c6370"),
+        meta=Style.parse("#9da5b4"),
+        error=Style.parse("bold #e06c75"),
         search_match=Style.parse("#000000 on #e5c07b"),
         search_current=Style.parse("bold #000000 on #ff8800"),
     ),
@@ -67,6 +71,8 @@ THEMES: dict[str, MdTheme] = {
         quote=Style.parse("italic #696c77"),
         html=Style.parse("#a0a1a7"),
         rule=Style.parse("#a0a1a7"),
+        meta=Style.parse("#696c77"),
+        error=Style.parse("bold #e45649"),
         search_match=Style.parse("#000000 on #ffe066"),
         search_current=Style.parse("bold #000000 on #ff9f43"),
     ),

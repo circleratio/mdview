@@ -16,7 +16,7 @@ from mdview_tui.errors import MdviewError
 from mdview_tui.history import History, Location
 from mdview_tui.keys import bindings
 from mdview_tui.links import resolve
-from mdview_tui.parser import parse
+from mdview_tui.parser import parse_document
 from mdview_tui.source import Source, load_file
 from mdview_tui.themes import THEMES, toggle
 from mdview_tui.watcher import FileWatcher
@@ -107,7 +107,7 @@ class MdviewApp(App):
     def _show(self, source: Source, line: int | None) -> None:
         self.source = source
         self.history.current.source = source
-        self.view.set_tokens(parse(source.text), line)
+        self.view.set_document(parse_document(source.text), line)
         if source.path is not None and self.watch_enabled:
             if self.watcher is None or self.watcher.path != source.path:
                 self.watcher = FileWatcher(source.path)

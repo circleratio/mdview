@@ -6,6 +6,7 @@
 - CommonMark + GFM（表・タスクリスト・取り消し線・自動リンク）に対応し、コードブロックはシンタックスハイライトします
 - less/vim 風のキー操作でスクロール・検索・目次ジャンプができます
 - 相対パスの `.md` リンクをたどり、戻る/進むで行き来できます
+- ファイル先頭の YAML のフロントマター（`title`・`author`・`date` など）を、本文と分けて文書の情報として表示します
 - 表示中のファイルを保存すると自動で再読込します
 - `e` キーで外部エディタを起動して編集できます
 - ダーク／ライトのテーマを切り替えられます
@@ -14,7 +15,7 @@
 
 - Python 3.10 以上
 - Linux / WSL / macOS（Windows Terminal はベストエフォート）
-- 依存ライブラリ: [Textual](https://github.com/Textualize/textual) 2.0 以上、[markdown-it-py](https://github.com/executablebooks/markdown-it-py)（linkify 付き）
+- 依存ライブラリ: [Textual](https://github.com/Textualize/textual) 2.0 以上、[markdown-it-py](https://github.com/executablebooks/markdown-it-py)（linkify 付き）、[PyYAML](https://pyyaml.org/) 6.0 以上
 
 ## インストール
 
@@ -27,13 +28,13 @@ $ uv tool install .
 
 ### pip が使えない環境で実行する場合
 
-依存ライブラリ（`textual`、`markdown-it-py`、`linkify-it-py`）がシステムに入っていれば、インストールせずにソースから実行できます。
+依存ライブラリ（`textual`、`markdown-it-py`、`linkify-it-py`、`PyYAML`）がシステムに入っていれば、インストールせずにソースから実行できます。
 
 ```console
 $ PYTHONPATH=src python3 -m mdview_tui README.md
 ```
 
-Debian / Ubuntu 系では `apt install python3-textual python3-markdown-it python3-linkify-it` で依存ライブラリを入れられます。
+Debian / Ubuntu 系では `apt install python3-textual python3-markdown-it python3-linkify-it python3-yaml` で依存ライブラリを入れられます。
 
 ## 使いかた
 
@@ -89,6 +90,32 @@ mdview-tui 0.1.0
 - `http(s)://` などの外部リンクは OS 既定のブラウザで開きます
 - `.md` 以外のローカルファイル（画像など）へのリンクは開けません
 
+### フロントマター
+
+ファイル先頭の `---` で囲まれた YAML のフロントマターは、本文の先頭に次のように表示します。目次には本文の見出しだけが出ます。
+
+```markdown
+---
+title: 設計メモ
+author: [山田 太郎, 佐藤 花子]
+date: 2026-10-08
+version: 1.10
+tags: [md, viewer]
+---
+```
+
+```
+設計メモ
+山田 太郎、佐藤 花子 ・ 2026-10-08
+┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+version  1.10
+tags     md, viewer
+────────────────────────────────────────
+```
+
+- 値は書かれた通りに表示します（`1.10` は `1.1` になりません）
+- YAML として解釈できない場合は、理由と元の文字列を表示し、本文は通常どおり表示します
+
 ### 終了コード
 
 | コード | 意味 |
@@ -117,7 +144,8 @@ $ PYTHONPATH=src python3 -m unittest discover -s tests -t .
 
 ## ドキュメント
 
-- [GUI 版 mdview の README](../README.md)
+- [リポジトリ全体の README](../README.md)、[GUI 版の README](../gui/README.md)
+- [両版の共通仕様](../doc/common.md)
 
 - [要求仕様](doc/requirement.md)
 - [設計](doc/spec.md)
