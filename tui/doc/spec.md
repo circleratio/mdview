@@ -502,6 +502,12 @@ def main(argv: list[str] | None = None) -> int: ...
 - 生成結果を `compile()` で構文チェックしてから書き出す。改行は LF、文字コードは UTF-8
 - `--check` では書き出さずに、既存のファイルと生成結果が一致するかだけを調べる（一致すれば 0、違えば理由を出して 1）
 
+運用の決まり:
+
+- `src/mdview_tui/` を変更するときは、`python3 tools/bundle.py` でポータブル版を作り直し、ソースの変更と同じコミットに含める。`pyproject.toml` の `dependencies` と `__version__` は生成物の先頭のコメントに入るので、これらを変えたときも同様に作り直す
+- `portable/mdview-tui.py` は直接編集しない
+- 作り直し忘れは `tests/test_portable.py` で検出する（同梱のファイルが `bundle()` の結果と一致しなければ失敗する）
+
 ## 7. テスト方針
 
 - テストは標準ライブラリの `unittest` で書く（pytest でもそのまま実行可能な形にする）。実行: `PYTHONPATH=src python3 -m unittest discover -s tests -t .`

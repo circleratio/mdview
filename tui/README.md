@@ -156,14 +156,30 @@ $ PYTHONPATH=src python3 -m unittest discover -s tests -t .
 
 ソースは `src/mdview_tui/`、テストは `tests/` にあります。
 
-### ポータブル版の再生成
+### src を変更したときの手順
 
-ポータブル版は `src/mdview_tui/` から `tools/bundle.py` で生成しています。直接編集せず、ソースを変更したら再生成してコミットしてください。同梱のファイルが古いままだとテスト（`tests/test_portable.py`）が失敗します。
+ポータブル版（`portable/mdview-tui.py`）は `src/mdview_tui/` から `tools/bundle.py` で生成しています。**`src/mdview_tui/` を変更したら、必ずポータブル版を作り直し、ソースの変更と同じコミットに含めてください。** ポータブル版を直接編集してはいけません（次に作り直したときに消えます）。
 
 ```console
-$ python3 tools/bundle.py          # portable/mdview-tui.py を作り直す
-$ python3 tools/bundle.py --check  # 最新かどうかだけを調べる（古ければ終了コード 1）
+$ cd tui
+# 1. src/mdview_tui/ を変更する
+# 2. ポータブル版を作り直す
+$ python3 tools/bundle.py
+wrote portable/mdview-tui.py
+# 3. テストを実行する（ポータブル版が古いままだと tests/test_portable.py が失敗する）
+$ PYTHONPATH=src python3 -m unittest discover -s tests -t .
+# 4. ソースとポータブル版をまとめてコミットする
+$ git add src/mdview_tui portable/mdview-tui.py
 ```
+
+ポータブル版が最新かどうかだけを調べるときは `--check` を使います（最新なら終了コード 0、古ければ 1）。
+
+```console
+$ python3 tools/bundle.py --check
+portable/mdview-tui.py is up to date
+```
+
+`pyproject.toml` の依存ライブラリや `__init__.py` のバージョンもポータブル版の先頭のコメントに入るので、これらを変えたときも作り直してください。
 
 モジュールをまたいで同じ名前の関数・クラス・変数を定義したり、パッケージ内の import に `as` の別名を付けたりすると、1ファイルにまとめられないため生成が失敗します。
 

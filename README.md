@@ -17,6 +17,7 @@ Markdownファイルを整形表示するビューア。用途に合わせて2�
 ```
 mdview/
 ├── README.md     # this file
+├── CLAUDE.md     # instructions for Claude Code
 ├── LICENSE
 ├── doc/
 │   └── common.md # rules shared by both versions
