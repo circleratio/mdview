@@ -51,6 +51,14 @@ export function resolveLinkTarget(href: string, dir: string | null): LinkTarget 
   return { kind: "file", path, anchor: anchor === "" ? null : anchor };
 }
 
+/** Banner messages for links that cannot be followed (doc/common.md 4; same wording as the TUI). */
+export const linkErrors = {
+  unsupported: (href: string) => `サポートしていないリンク: ${href}`,
+  missingFile: (path: string) => `ファイルが見つかりません: ${path}`,
+  missingAnchor: (anchor: string) => `見出しが見つかりません: #${anchor}`,
+  cannotOpenUrl: (url: string) => `ブラウザを開けませんでした: ${url}`,
+};
+
 /**
  * Scrolls to the element with the given id inside `container` only. Every open tab stays mounted
  * (hidden) at once, so a document-wide lookup could hit a same-id heading in another tab.

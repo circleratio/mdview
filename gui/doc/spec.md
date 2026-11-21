@@ -177,8 +177,9 @@ src/
 | `anchor` | `#`始まり | 自タブのコンテナ配下から`id`が一致する要素を探してスクロールする（`scrollToIdWithin`。全タブが常時マウントされているため、文書全体のid検索は使わない。4.4参照） |
 | `external` | `hasUriScheme(href)`（`http:`/`https:`/`mailto:`など、Windowsの絶対パスと誤認しない任意のURIスキーム） | `@tauri-apps/plugin-opener`の`openUrl()`でOS既定ブラウザ（またはスキームに関連付けられたアプリ）を起動 |
 | `file` | 上記以外で、`#`より前のパスが`.md`/`.markdown` | `resolveRelativePath(dir, path)`で絶対パス化し、`exists()`が真なら`openTab(path, { anchor })`を呼ぶ。既に同じファイルが別タブで開いていればそのタブへ切り替わり、開いていなければ新規タブとして開く（4.2参照） |
-| `unsupported` | それ以外（Markdown以外のローカルファイル、空のリンク） | 何もしない |
+| `unsupported` | それ以外（Markdown以外のローカルファイル、空のリンク） | エラーバナーに`サポートしていないリンク: <href>`を出す（`href`は`decodeLinkPart`で戻した文字列） |
 
+- **開けないリンクの通知**: 開けなかった場合は、外部エディタの起動失敗と同じく`setAppError`でエラーバナーに理由を出す（`appError`は「どのタブにも属さない一時的なエラー」、4.1参照）。文言はTUI版と揃え、`lib/links.ts`の`linkErrors`にまとめる。`file`で`exists()`が偽（またはfsのscope外で例外）なら`ファイルが見つかりません: <path>`、`anchor`で`scrollToIdWithin`が見つけられなければ`見出しが見つかりません: #<id>`（`other.md#id`の移動先が無い場合は`TabPane`側で同じ文言）、`openUrl()`が失敗したら`ブラウザを開けませんでした: <url>`。
 - **パーセントエンコードの復元**: スキームの有無は、復元した後の文字列で判定する（`normalizeUri`は`\`も`%5C`にするため、`C:\docs\x.md`が`C:%5Cdocs%5Cx.md`となり、そのままでは`C:`というスキームのURLに見える）。外部URLとして開く場合は、書かれた通りの文字列を渡す。パスとアンカーはそれぞれ`decodeURIComponent`で元の文字に戻す。不正な並び（単独の`%`など）は元の文字列のまま扱う。Markdownに`%20`と書いた場合だけでなく、日本語などをそのまま書いた場合にも必要になる。react-markdownが使う`mdast-util-to-hast`は、すべてのリンクの`href`を`normalizeUri`でパーセントエンコードするため、`[x](#概要)`はDOM上で`#%E6%A6%82%E8%A6%81`になり、そのままでは`rehype-slug`の見出しid（`概要`）にも実在のファイル名にも一致しない。
 - **アンカー付きのファイルリンク（`other.md#id`）**: `#`でパスとアンカーに分けてから拡張子を判定する。アンカーは`TabState.pendingAnchor`に入れておき、`TabPane`が「アクティブ、かつ本文を描画済み」になった時点の`useEffect`で`scrollToIdWithin`を呼んでから`null`に戻す。新規タブでは、読み込みが終わって本文が描画された直後に移動する。既存タブへの切り替えでは、`usePaneZoom`がタブ切り替え時にスクロール位置を戻す処理（`useLayoutEffect`）の後に実行されるため、その処理で移動が打ち消されることはない。
 

@@ -8,7 +8,7 @@ import { useTabs, type TabState } from "../state/TabsContext";
 import { Sidebar } from "./Sidebar";
 import { MarkdownView } from "./MarkdownView";
 import { parseFrontMatter } from "../lib/frontMatter";
-import { scrollToIdWithin } from "../lib/links";
+import { linkErrors, scrollToIdWithin } from "../lib/links";
 
 interface TabPaneProps {
   tab: TabState;
@@ -30,7 +30,7 @@ export function TabPane({ tab, isActive }: TabPaneProps) {
   // Front matter is split off before rendering so it never reaches react-markdown (spec.md 12.1).
   const parsed = useMemo(() => (tab.content === null ? null : parseFrontMatter(tab.content)), [tab.content]);
 
-  const { setTabPendingAnchor } = useTabs();
+  const { setTabPendingAnchor, setAppError } = useTabs();
 
   const handleSelectHeading = useCallback((id: string) => {
     // Scoped to this tab's own container, not document.getElementById: other open tabs stay
@@ -45,9 +45,11 @@ export function TabPane({ tab, isActive }: TabPaneProps) {
   useEffect(() => {
     if (pendingAnchor === null || !isActive || !hasContent) return;
     const container = containerRef.current;
-    if (container) scrollToIdWithin(container, pendingAnchor, "auto");
+    if (container && !scrollToIdWithin(container, pendingAnchor, "auto")) {
+      setAppError(linkErrors.missingAnchor(pendingAnchor));
+    }
     setTabPendingAnchor(path, null);
-  }, [path, pendingAnchor, isActive, hasContent, setTabPendingAnchor]);
+  }, [path, pendingAnchor, isActive, hasContent, setTabPendingAnchor, setAppError]);
 
   return (
     <div className="tab-pane" data-tab-path={tab.path} style={{ display: isActive ? "flex" : "none" }}>
