@@ -1,13 +1,13 @@
 # mdview 設計書
 
-`requirements.md`（要求仕様）に対する実装設計をまとめる。対象は現在のソースツリー（`src/` / `src-tauri/`）の実装内容。
+`requirement.md`（要求仕様）に対する実装設計をまとめる。対象は現在のソースツリー（`src/` / `src-tauri/`）の実装内容。
 
 ## 1. アーキテクチャ概要
 
 - **Tauri v2**（Rust製バックエンド + OS純正Webview）上に**React 19 + TypeScript + Vite**のフロントエンドを載せる構成。
-- フロントエンドはMarkdownの読み込み・レンダリング・UI操作・Word形式へのエクスポート（requirements.md 3.10、6章参照）をほぼすべて担当し、Rust側は「CLI引数取得」「ファイル監視」「外部エディタ起動」という薄い役割のみを持つ。
+- フロントエンドはMarkdownの読み込み・レンダリング・UI操作・Word形式へのエクスポート（requirement.md 3.10、6章参照）をほぼすべて担当し、Rust側は「CLI引数取得」「ファイル監視」「外部エディタ起動」という薄い役割のみを持つ。
 - ファイルの読み書きはフロントエンドから`@tauri-apps/plugin-fs`を直接呼び出す方式とし、独自のRustコマンドは作らない（読み取り専用のcapabilitiesで権限を絞ることでセキュリティを担保）。プロセス起動が必要な「外部エディタで開く」だけは、任意コマンド実行の穴にしないよう専用のRustコマンドとして実装する。
-- 複数ファイルを同時に開く「タブ機能」（requirements.md 3.2）はフロントエンド側の状態管理・UI構成の拡張として実現する。Rust側で変わるのは「ファイル監視」だけで、単一ファイルの監視から**タブごとに独立した複数ファイルの同時監視**に拡張する（3.1参照）。
+- 複数ファイルを同時に開く「タブ機能」（requirement.md 3.2）はフロントエンド側の状態管理・UI構成の拡張として実現する。Rust側で変わるのは「ファイル監視」だけで、単一ファイルの監視から**タブごとに独立した複数ファイルの同時監視**に拡張する（3.1参照）。
 
 ```
 ┌─────────────────────────────┐        ┌───────────────────────────┐
@@ -100,14 +100,14 @@ src/
 - **書き込み・削除系の権限は一切付与しない**（要求仕様3.7「閲覧専用」を権限レベルで担保）
 - `tauri.conf.json`の`app.security.assetProtocol`を`enable:true, scope:["**"]`にし、Rust依存の`tauri` cargo featureに`protocol-asset`を追加。ローカル画像を`convertFileSrc()`経由で表示するために必要。
 - `initial_file_path`/`start_watching`/`stop_watching`/`open_in_editor`/`finish_startup`はプラグインコマンドではなく自前実装のTauriコマンドのため、capabilities（ACL）の対象外で常時呼び出し可能。`open_in_editor`は代わりに「フロントエンド側でユーザー設定値以外を渡さない」という実装規約でスコープを絞っている（3.1参照）。
-- Word形式エクスポート（requirements.md 3.10）のため`dialog:allow-save`・`fs:allow-write-file`を追加する。書き込み対象を保存ダイアログで選んだ1ファイルに限定する考え方は`open_in_editor`と同様に実装規約側で担保する（詳細は6.4参照）。
+- Word形式エクスポート（requirement.md 3.10）のため`dialog:allow-save`・`fs:allow-write-file`を追加する。書き込み対象を保存ダイアログで選んだ1ファイルに限定する考え方は`open_in_editor`と同様に実装規約側で担保する（詳細は6.4参照）。
 
 ## 4. フロントエンド設計
 
 ### 4.1 状態管理
 
 - `state/TabsContext.tsx`: アプリ全体でただ1つ、開いている全タブの配列`tabs: TabState[]`・`activeTabPath: string | null`・どのタブにも属さない一時的なエラー`appError: string | null`を保持するグローバル状態。
-  - `TabState = { path, dir, content, loading, error, search: { query, matchCount, currentIndex } }`。**タブの識別子は連番IDではなく`path`文字列そのもの**とする。「既に同じファイルを開いていれば新規タブを作らず既存タブに切り替える」（requirements.md 3.2）を`tabs.some(t => t.path === path)`という単純な配列検索だけで実現できるための設計。パスの大文字小文字などの正規化は行わない（既存の`useFileWatcher`のpath完全一致判定と同じ前提を踏襲）。
+  - `TabState = { path, dir, content, loading, error, search: { query, matchCount, currentIndex } }`。**タブの識別子は連番IDではなく`path`文字列そのもの**とする。「既に同じファイルを開いていれば新規タブを作らず既存タブに切り替える」（requirement.md 3.2）を`tabs.some(t => t.path === path)`という単純な配列検索だけで実現できるための設計。パスの大文字小文字などの正規化は行わない（既存の`useFileWatcher`のpath完全一致判定と同じ前提を踏襲）。
   - 公開する操作: タブの追加（`loading:true`の仮登録）／`setTabDocument`／`setTabError`／`setTabLoading`／`removeTab`／`setActiveTab`、検索状態用の`setTabSearchQuery`・`setTabSearchMatches`・`searchGoToNext`・`searchGoToPrev`・`clearTabSearch`、および`appError`用の`setAppError`。
   - `appError`は「まだどのタブにも属していない」失敗専用のバナー状態（新規オープン試行の失敗、外部エディタ起動失敗）。既に開いているタブの再読み込み失敗は、ここではなく該当タブ自身の`error`に入る（4.4参照）。
 - `state/TabDocumentContext.tsx`: `TabPane`が自分の担当する1タブぶんの`{ path, dir }`だけを配下（`MarkdownLink`）へ渡すための読み取り専用コンテキスト。旧`DocumentContext`が持っていた`setDocument`等のsetterはすべて`TabsContext`側（ファイル読み込みのオーケストレーションを行う`useFileOpener`経由）に一本化したため、こちらは値を受け渡すだけの薄いラッパーになる。
@@ -116,7 +116,7 @@ src/
 
 | フック | 役割 |
 | --- | --- |
-| `useFileOpener` | `openTab(path)`と`reloadTab(path)`を提供。`openTab`は既に同じpathのタブがあれば`setActiveTab`した上で`addRecentFile`を呼ぶ（新規タブを作らない場合も「開いた」扱いとして最近使ったファイル一覧の先頭に繰り上げる、requirements.md 3.1）。無ければ`loading:true`の仮タブを追加して即座にアクティブにし、`exists`確認→`readTextFile`→`dirname`取得→`setTabDocument`→`addRecentFile`→Rust`start_watching`呼び出しを行う。失敗時は`removeTab`でタブごと破棄しつつ`setAppError`＋`removeRecentFile`（新規タブが壊れたまま残ることはない）。`reloadTab`は既存タブに対してのみ動作し、失敗時はタブを消さず`setTabError`のみ行う（stale contentの上にエラーバナーを重ねる、単一ファイル版と同じ見た目）。ダイアログ経由(`openViaDialog`)・ドラッグ&ドロップ・最近使ったファイル選択・相対Markdownリンククリックは、いずれもこの`openTab`を呼ぶ薄いラッパー。 |
+| `useFileOpener` | `openTab(path)`と`reloadTab(path)`を提供。`openTab`は既に同じpathのタブがあれば`setActiveTab`した上で`addRecentFile`を呼ぶ（新規タブを作らない場合も「開いた」扱いとして最近使ったファイル一覧の先頭に繰り上げる、requirement.md 3.1）。無ければ`loading:true`の仮タブを追加して即座にアクティブにし、`exists`確認→`readTextFile`→`dirname`取得→`setTabDocument`→`addRecentFile`→Rust`start_watching`呼び出しを行う。失敗時は`removeTab`でタブごと破棄しつつ`setAppError`＋`removeRecentFile`（新規タブが壊れたまま残ることはない）。`reloadTab`は既存タブに対してのみ動作し、失敗時はタブを消さず`setTabError`のみ行う（stale contentの上にエラーバナーを重ねる、単一ファイル版と同じ見た目）。ダイアログ経由(`openViaDialog`)・ドラッグ&ドロップ・最近使ったファイル選択・相対Markdownリンククリックは、いずれもこの`openTab`を呼ぶ薄いラッパー。 |
 | `useFileWatcher` | アプリ起動時に一度だけ`file-changed`イベントを購読し、payloadのpathが現在開いているいずれかのタブのpathと一致すれば、そのタブに対して`reloadTab`を呼ぶ。`tabs`配列は常に最新を参照できるようrefで保持し、タブの増減のたびに購読を張り直したりはしない。 |
 | `useRecentFiles` | `@tauri-apps/plugin-store`に`recentFiles`配列（最大10件、重複除去）を永続化する。変更なし。 |
 | `useHeadings` | レンダリング後のDOMを`querySelectorAll('h1..h6')`で走査して見出しツリーを構築し、`IntersectionObserver`で画面内に入っている見出しのうち最上部のものを「アクティブ」とする。ロジックは変更なく、`TabPane`ごとに1インスタンス生成される。 |
@@ -130,7 +130,7 @@ src/
 
 各`TabPane`は`TabDocumentContext.Provider`で自タブの`{path, dir}`を配下に渡しつつ、そのタブの`loading`/`error`/`content`に応じてローディング表示・エラーバナー・2ペイン（`Sidebar`+`MarkdownView`、`react-resizable-panels`の`Group`/`Panel`/`Separator`。サイズ指定は**文字列でパーセント指定**、数値だとpx扱いになる点に注意）を描画する。`useHeadings`・`useSearch`の副作用部分は`TabPane`内でそのタブ用の`containerRef`に対して呼び出す。ペイン幅は`Group`インスタンスがタブごとに独立するため、タブごとに個別のサイズを持つ（アプリ再起動時の永続化はしない、既存の単一ファイル版と同じ方針）。
 
-`TabBar`はタブごとにファイル名ラベル（`title`属性でフルパスをツールチップ表示）と×の閉じるボタンを横並びで表示する。コンテナに`overflow-x: auto; white-space: nowrap`を設定し、タブ数の上限なしに横スクロールで対応する（requirements.md 3.2）。タブクリックで`setActiveTab`、×クリックは`event.stopPropagation()`した上でそのタブを閉じる。閉じる処理は「`removeTab`＋Rustの`stop_watching`呼び出し」を1セットとし、閉じたのがアクティブタブだった場合は残っているタブのうち直前のタブ（無ければ次のタブ、それも無ければ`null`）をアクティブにする。`Ctrl+W`もこれと同じ「アクティブタブを閉じる」処理を呼ぶグローバルキーハンドラで、`useSearch`/`useExternalEditor`と同じ「フックが自分でキー購読する」パターンを踏襲する。閉じるボタンは新規のSVGアイコンを追加せず、既存の▲/▼ボタンと同様「×」のテキストグリフで表現する（タブの数だけ繰り返し描画されるため軽量さを優先）。
+`TabBar`はタブごとにファイル名ラベル（`title`属性でフルパスをツールチップ表示）と×の閉じるボタンを横並びで表示する。コンテナに`overflow-x: auto; white-space: nowrap`を設定し、タブ数の上限なしに横スクロールで対応する（requirement.md 3.2）。タブクリックで`setActiveTab`、×クリックは`event.stopPropagation()`した上でそのタブを閉じる。閉じる処理は「`removeTab`＋Rustの`stop_watching`呼び出し」を1セットとし、閉じたのがアクティブタブだった場合は残っているタブのうち直前のタブ（無ければ次のタブ、それも無ければ`null`）をアクティブにする。`Ctrl+W`もこれと同じ「アクティブタブを閉じる」処理を呼ぶグローバルキーハンドラで、`useSearch`/`useExternalEditor`と同じ「フックが自分でキー購読する」パターンを踏襲する。閉じるボタンは新規のSVGアイコンを追加せず、既存の▲/▼ボタンと同様「×」のテキストグリフで表現する（タブの数だけ繰り返し描画されるため軽量さを優先）。
 
 `Toolbar`は「開く」「最近使ったファイル」「エディタで開く」「検索欄」を持つ点は変わらないが、いずれの操作対象も`TabsContext`の`activeTabPath`（＝アクティブタブ）になる。ファイル未オープン時（`tabs.length === 0`）の無効化条件はすべて`activeTabPath === null`に統一される。タブごとのファイル名がタブラベルとして常時見えるようになるため、旧`.toolbar__current-path`（ツールバー右端のファイル名表示、7.1の対策対象だった要素）は廃止する。⚙ボタンによる外部エディタコマンド設定パネルは変更なし。
 
@@ -138,12 +138,12 @@ src/
 
 ### 4.4 タブ機能の設計判断
 
-- **タブの識別子＝ファイルパス**: 連番やUUIDを別途発行せず、開いているファイルの絶対パス文字列をそのままタブのキーとして使う。「既に開いているファイルを再度開こうとしたら既存タブに切り替える」という要求（requirements.md 3.2）を、タブ追加時の配列検索だけで満たせるため。
+- **タブの識別子＝ファイルパス**: 連番やUUIDを別途発行せず、開いているファイルの絶対パス文字列をそのままタブのキーとして使う。「既に開いているファイルを再度開こうとしたら既存タブに切り替える」という要求（requirement.md 3.2）を、タブ追加時の配列検索だけで満たせるため。
 - **非アクティブなタブもDOMにマウントしたまま隠す**: `TabPane`をアクティブ/非アクティブに関わらず常時マウントし、`display:none`で切り替える設計とした。理由:
-  1. requirements.md 3.2は自動リロード・目次・検索のハイライト状態が「タブごとに独立して保持される」ことを求めている。非表示タブでもファイル変更を検知して再読み込みする（`useFileWatcher`が全タブを対象に監視する）には、そのタブのReact状態（`content`）がタブ切り替えと無関係に生き続けている必要がある。
+  1. requirement.md 3.2は自動リロード・目次・検索のハイライト状態が「タブごとに独立して保持される」ことを求めている。非表示タブでもファイル変更を検知して再読み込みする（`useFileWatcher`が全タブを対象に監視する）には、そのタブのReact状態（`content`）がタブ切り替えと無関係に生き続けている必要がある。
   2. アンマウント→再マウント方式だと、タブに戻るたびmark.jsのハイライト・Mermaid/KaTeXの再描画・スクロール位置の復元をすべて作り直す必要があり、実装・不具合の温床になる。マウントしたまま隠すだけならこれらはブラウザの描画状態としてそのまま保持される。
-  - トレードオフとして、開くタブが増えるほどDOM・メモリ使用量が線形に増える。requirements.md 5節でタブ数に上限を設けない方針としたが、mdviewは少数のファイルを並べて参照する軽量ビューア用途を想定しており、実用上問題になる規模ではないと判断した。
-  - **既知の落とし穴（対応済み）**: `rehype-slug`が振る見出しidは「1つの文書内」でのみ一意性を保証する。全タブを常時マウントする設計の結果、同じ見出しテキストを持つ別タブ（本プロジェクトの`requirements.md`/`spec.md`同士のように、番号付き見出しなどで衝突しやすい）が同時にDOM上へ存在しうる。このため`document.getElementById(id)`のような**文書全体を対象にしたid検索**は、非表示の別タブ側の要素を誤って返しうる。実際に「2つ目のファイルを開くと目次のハイライト・クリックジャンプが効かない」という不具合として顕在化した。対策として、目次関連の要素解決はすべて`document.getElementById`を使わず、そのタブ自身の`containerRef`配下から探す（`useHeadings`は見出し要素への参照を直接保持、`TabPane`のクリックジャンプと`MarkdownLink`の同一文書内アンカー（`#id`）は自タブのコンテナ配下を`querySelectorAll`で探す）方式に統一した。
+  - トレードオフとして、開くタブが増えるほどDOM・メモリ使用量が線形に増える。requirement.md 5節でタブ数に上限を設けない方針としたが、mdviewは少数のファイルを並べて参照する軽量ビューア用途を想定しており、実用上問題になる規模ではないと判断した。
+  - **既知の落とし穴（対応済み）**: `rehype-slug`が振る見出しidは「1つの文書内」でのみ一意性を保証する。全タブを常時マウントする設計の結果、同じ見出しテキストを持つ別タブ（本プロジェクトの`requirement.md`/`spec.md`同士のように、番号付き見出しなどで衝突しやすい）が同時にDOM上へ存在しうる。このため`document.getElementById(id)`のような**文書全体を対象にしたid検索**は、非表示の別タブ側の要素を誤って返しうる。実際に「2つ目のファイルを開くと目次のハイライト・クリックジャンプが効かない」という不具合として顕在化した。対策として、目次関連の要素解決はすべて`document.getElementById`を使わず、そのタブ自身の`containerRef`配下から探す（`useHeadings`は見出し要素への参照を直接保持、`TabPane`のクリックジャンプと`MarkdownLink`の同一文書内アンカー（`#id`）は自タブのコンテナ配下を`querySelectorAll`で探す）方式に統一した。
 - **検索状態は`TabsContext`に集約し、`TabPane`は片方向に反応するだけ**: `Toolbar`（検索入力欄・▲/▼ボタン）と`TabPane`（mark.jsによるDOM操作）は兄弟同士でDOM参照を共有できない。そこで`query`/`matchCount`/`currentIndex`を`TabsContext`の`tab.search`に持たせ、`Toolbar`はそこへの読み書き（`setTabSearchQuery`・`searchGoToNext`/`Prev`・`clearTabSearch`）だけを行う。`TabPane`は自タブの`search.query`/`currentIndex`の変化を`useEffect`で監視し、mark.jsの実行とスクロール・ハイライトクラスの付け替えという副作用だけを担当する。双方が相手の内部関数を直接呼び合うレジストリのような仕組みを避け、状態を介した片方向のデータフロー（Toolbarが書く→TabPaneが反応する→結果をTabPaneが書き戻す→Toolbarが表示する）に単純化した。
 - **タブを跨いだエラー表示の切り分け**: 「まだタブが存在しない状態での失敗」（新規オープン試行、外部エディタ起動）は`TabsContext.appError`としてウィンドウ上部に一時バナー表示する。「既に開いているタブの再読み込み失敗」（監視中のファイルが外部で削除された等）は該当タブ自身の`error`とし、そのタブを表示したときにだけ（stale contentの上に重ねて）表示する。前者は「どのタブにも属さない一時的な通知」、後者は「特定タブの状態」という性質の違いを、そのまま状態の置き場所に反映させている。
 - **タブを閉じたときのRust側クリーンアップ**: タブを閉じる操作は必ずRustの`stop_watching(path)`を呼び、そのファイルの`notify`ウォッチャーを破棄する。呼び忘れると、閉じたはずのタブのファイルを外部で変更したときに存在しないタブ宛の`file-changed`イベントが飛び続ける（実害はないが無駄なファイル監視が残り続ける）。
@@ -177,35 +177,35 @@ src/
 
 `dir`は自タブの`TabDocumentContext`から取得するため、リンクが含まれるタブ自身のディレクトリを基準に相対パスが解決される。
 
-## 6. Word形式エクスポート設計（requirements.md 3.10）
+## 6. Word形式エクスポート設計（requirement.md 3.10）
 
-requirements.md 3.10（Word形式で保存）の実装済みの設計をまとめる（実機での動作確認状況はrequirements.md 8節を参照）。
+requirement.md 3.10（Word形式で保存）の実装済みの設計をまとめる（実機での動作確認状況はrequirement.md 8節を参照）。
 
 ### 6.1 方針
 
 - 変換処理はフロントエンド側で完結させ、Rust側に専用コマンドを追加しない。1章の「ファイルの読み書きはフロントエンドから`plugin-fs`を直接呼び出す」方針を、書き込みを伴うこの機能にもそのまま適用する。
 - 変換元はDOM（レンダリング結果）ではなく、react-markdownが解釈するのと同じMarkdown AST（`remark-gfm`/`remark-math`適用後）とする。DOMを直接docxへ変換するのではなくASTを起点にすることで、`lib/markdown.tsx`のcomponentsマップ（画像パス解決・Mermaidブロック判定など）と処理の前提を揃えられる。
-- Mermaid図・KaTeX数式は、AST上はコードブロック／数式ノードでしかなく、docx側で編集可能なテキスト・図形として変換する対象ではない（requirements.md 3.10）。そのため、これらのみ「レンダリング済みDOMを画像化」という例外経路を取る。
-- コードブロックのシンタックスハイライト配色（`hljs-*`）は変換対象外とし、等幅フォントのプレーンテキストとしてのみ変換する（requirements.md 3.10）。ASTのコードノードからテキストのみを取り出せばよく、DOM側のトークン構造を参照する必要がない。
+- Mermaid図・KaTeX数式は、AST上はコードブロック／数式ノードでしかなく、docx側で編集可能なテキスト・図形として変換する対象ではない（requirement.md 3.10）。そのため、これらのみ「レンダリング済みDOMを画像化」という例外経路を取る。
+- コードブロックのシンタックスハイライト配色（`hljs-*`）は変換対象外とし、等幅フォントのプレーンテキストとしてのみ変換する（requirement.md 3.10）。ASTのコードノードからテキストのみを取り出せばよく、DOM側のトークン構造を参照する必要がない。
 - 本文中のリンクは、外部URL（`http:`/`https:`/`mailto:`等スキームを持つもの）のみWordのハイパーリンクとして変換する。相対Markdownリンク・同一文書内アンカー（`#id`）は宛先がWord文書内で意味を持たないため、リンクテキストのみのプレーンテキストにする（`lib/paths.ts`の`hasUriScheme`と同じ判定を流用できる）。
-- 見出しにはWordの見出しスタイル（Heading 1〜6、文書タイトルはTitleスタイル）を付与するが、Wordの目次フィールド（TOC）は自動生成しない（requirements.md 3.10）。
-- フォントは文書タイトル・見出し・本文で固定指定する（requirements.md 3.10）。
+- 見出しにはWordの見出しスタイル（Heading 1〜6、文書タイトルはTitleスタイル）を付与するが、Wordの目次フィールド（TOC）は自動生成しない（requirement.md 3.10）。
+- フォントは文書タイトル・見出し・本文で固定指定する（requirement.md 3.10）。
   - 文書タイトル（文書内で最初に現れる`depth === 1`の見出しノード1つのみ）: 「游ゴシック Medium」・18pt・黒
   - 見出し（それ以外の見出し。文書タイトルを消費した後に現れる`depth === 1`の見出しがあった場合も含む）: 「游ゴシック Medium」・14pt・黒
   - 本文（見出し・コードブロックを除く段落・リスト・表・引用）: 「游明朝」・10.5pt（色は指定しない＝Word既定）
   - いずれも`Paragraph`/`TextRun`の`font`・`size`・`color`プロパティで明示指定する。Windows環境では「游ゴシック Medium」は`bold`フラグではなく独立したフォントファミリ名として存在するため、`bold: true`ではなくフォント名そのものを`"游ゴシック Medium"`と指定する。`size`はdocxパッケージの仕様上ハーフポイント単位のため、18pt→`36`、14pt→`28`、10.5pt→`21`を指定する。`color`は`"000000"`を明示指定する（Wordの既定テンプレートのTitle/Headingスタイルはテーマ色由来の色（黒以外）を持つことがあり、スタイル指定だけでは黒にならない場合があるため、ランレベルで上書きする）。コードブロックの等幅フォント（6.1既述）はこの本文フォント指定より優先される。
   - 「最初の`depth === 1`見出しだけを文書タイトルとする」判定は、AST走査全体で使い回す`docxExport.ts`内の相関用オブジェクト（Mermaid/KaTeXの画像相関に使う`mermaidIndex`/`katexIndex`と同じオブジェクト、6.2参照）に`titleConsumed: boolean`を追加し、最初の1回だけ消費されるフラグとして持たせる。
-- 段落の行間・段落後余白も固定指定する（requirements.md 3.10）。行間の定義は「行の上端から次の行の上端までの幅がフォントサイズの1.5倍」（＝行と行の余白はフォントサイズの0.5倍）であり、Wordの行間「倍数」指定（`lineRule: LineRuleType.AUTO`。フォント固有の既定行送り値が基準で、指定フォントサイズより大きくなることが多い）はこの定義に一致しないため使わない。代わりに`lineRule: LineRuleType.AT_LEAST`を使い、`line`にフォントサイズから直接計算したtwip値（`size`（半ポイント）の値 × 15 ＝ フォントサイズ(pt) × 1.5 × 20）を指定する。文書タイトル・見出し・本文はフォントサイズが異なるため、`line`もそれぞれ計算し直す（タイトル18pt→`540`、見出し14pt→`420`、本文10.5pt→`315`）。`after`（段落後余白、6pt→`120`twip）はすべて共通。
+- 段落の行間・段落後余白も固定指定する（requirement.md 3.10）。行間の定義は「行の上端から次の行の上端までの幅がフォントサイズの1.5倍」（＝行と行の余白はフォントサイズの0.5倍）であり、Wordの行間「倍数」指定（`lineRule: LineRuleType.AUTO`。フォント固有の既定行送り値が基準で、指定フォントサイズより大きくなることが多い）はこの定義に一致しないため使わない。代わりに`lineRule: LineRuleType.AT_LEAST`を使い、`line`にフォントサイズから直接計算したtwip値（`size`（半ポイント）の値 × 15 ＝ フォントサイズ(pt) × 1.5 × 20）を指定する。文書タイトル・見出し・本文はフォントサイズが異なるため、`line`もそれぞれ計算し直す（タイトル18pt→`540`、見出し14pt→`420`、本文10.5pt→`315`）。`after`（段落後余白、6pt→`120`twip）はすべて共通。
   - `exact`ではなく`atLeast`を使うのは、本文段落中にインライン数式（KaTeXの画像化、本節既述）が挟まりフォントサイズ基準の行送りより画像が高くなる場合に、その行だけ自動的に高さが広がりクリップを防ぐため。通常のテキストのみの行では指定した行送りぴったりになり、見た目は`exact`と変わらない。
   - Mermaid/KaTeXの画像のみで構成される段落（テキストランを持たない、本節既述の「レンダリング済みDOMを画像化」した結果を挿入する段落）は、画像の高さがフォントサイズと無関係なため`line`/`lineRule`は設定せず、`after: 120`のみを指定する（Wordの既定の行高さ拡張に任せる）。
-  - コードブロックの各行は既存の`spacing: { before: 0, after: 0 }`のまま据え置き、この行間・段落後余白ルールの対象外とする（詰まったコードらしい見た目を保つため、requirements.md 3.10）。
+  - コードブロックの各行は既存の`spacing: { before: 0, after: 0 }`のまま据え置き、この行間・段落後余白ルールの対象外とする（詰まったコードらしい見た目を保つため、requirement.md 3.10）。
 
 ### 6.2 使用ライブラリ・処理フロー
 
 - **docx生成**: npm `docx`パッケージ（ブラウザ上で`.docx`バイナリを組み立てられるライブラリ）を新規依存として追加する。
-- **Mermaid/KaTeXの画像化**: 変換対象タブが実際にレンダリング済みのSVG（`MermaidBlock`が`innerHTML`に注入したもの）・KaTeX要素を、画面表示と等倍のサイズで一旦`<canvas>`に描画し`toBlob()`でPNG化してdocxへ画像として埋め込む（requirements.md 3.10、高解像度化は行わない）。変換のためだけにMermaid/KaTeXを再実行することはしない。
-- 本文ズーム（requirements.md 3.11）が100%以外のときは、画像化の間だけ対象タブのズームを一時的に100%へ戻す（11.6参照）。これにより、出力される画像の大きさは表示倍率に左右されない。
-- 処理フロー: Toolbarの「Word形式で保存」ボタン押下 → `@tauri-apps/plugin-dialog`の`save()`で保存先パスを取得（既定ファイル名は元のMarkdownファイル名の拡張子を`.docx`に変えたもの、requirements.md 3.10） → `lib/docxExport.ts`がMarkdown ASTとアクティブタブのDOM（画像化対象の取得用）を入力に`.docx`バイナリ（`Uint8Array`）を生成 → `@tauri-apps/plugin-fs`の`writeFile(path, bytes)`で書き込み → 失敗時は`setAppError`でエラーバナー表示（`useFileOpener`の新規オープン失敗時と同じ「タブに属さない一時エラー」の扱い、4.1参照）。
+- **Mermaid/KaTeXの画像化**: 変換対象タブが実際にレンダリング済みのSVG（`MermaidBlock`が`innerHTML`に注入したもの）・KaTeX要素を、画面表示と等倍のサイズで一旦`<canvas>`に描画し`toBlob()`でPNG化してdocxへ画像として埋め込む（requirement.md 3.10、高解像度化は行わない）。変換のためだけにMermaid/KaTeXを再実行することはしない。
+- 本文ズーム（requirement.md 3.11）が100%以外のときは、画像化の間だけ対象タブのズームを一時的に100%へ戻す（11.6参照）。これにより、出力される画像の大きさは表示倍率に左右されない。
+- 処理フロー: Toolbarの「Word形式で保存」ボタン押下 → `@tauri-apps/plugin-dialog`の`save()`で保存先パスを取得（既定ファイル名は元のMarkdownファイル名の拡張子を`.docx`に変えたもの、requirement.md 3.10） → `lib/docxExport.ts`がMarkdown ASTとアクティブタブのDOM（画像化対象の取得用）を入力に`.docx`バイナリ（`Uint8Array`）を生成 → `@tauri-apps/plugin-fs`の`writeFile(path, bytes)`で書き込み → 失敗時は`setAppError`でエラーバナー表示（`useFileOpener`の新規オープン失敗時と同じ「タブに属さない一時エラー」の扱い、4.1参照）。
 
 ### 6.3 ディレクトリ構成への追加
 
@@ -216,7 +216,7 @@ requirements.md 3.10（Word形式で保存）の実装済みの設計をまと�
 ### 6.4 権限設計への追加（3.3の補足）
 
 - `dialog:allow-save`（保存先選択ダイアログ）・`fs:allow-write-file`をcapabilitiesに追加する。
-- Tauri v2の`fs`プラグインはread/writeでscopeを分離できないため、`fs:scope`の`{"path": "**/*"}`は書き込みにもそのまま適用される。requirements.md 4節が求める「保存ダイアログでユーザーが指定した保存先ファイルへの書き込み権限に限定し、任意ファイルへの書き込みの穴にしない」は、`open_in_editor`（3.1・3.3）と同じ考え方——**capabilitiesのscopeではなく実装規約でスコープを絞る**——で担保する。具体的には、`writeFile`の呼び出し箇所を`useWordExport`の1箇所のみとし、書き込み先パスには常に直前の`save()`ダイアログの戻り値だけを渡す（Markdown本文やリンク文字列など、信頼できない入力由来の値が書き込み先パスに使われる経路を作らない）。
+- Tauri v2の`fs`プラグインはread/writeでscopeを分離できないため、`fs:scope`の`{"path": "**/*"}`は書き込みにもそのまま適用される。requirement.md 4節が求める「保存ダイアログでユーザーが指定した保存先ファイルへの書き込み権限に限定し、任意ファイルへの書き込みの穴にしない」は、`open_in_editor`（3.1・3.3）と同じ考え方——**capabilitiesのscopeではなく実装規約でスコープを絞る**——で担保する。具体的には、`writeFile`の呼び出し箇所を`useWordExport`の1箇所のみとし、書き込み先パスには常に直前の`save()`ダイアログの戻り値だけを渡す（Markdown本文やリンク文字列など、信頼できない入力由来の値が書き込み先パスに使われる経路を作らない）。
 
 ## 7. パス解決ユーティリティ（`lib/paths.ts`）
 
@@ -257,7 +257,7 @@ Windows専用の同期パス処理。`@tauri-apps/api/path`の非同期APIは`im
 - フロントマターの切り出しと表示用データへの変換（`lib/frontMatter.ts`の`parseFrontMatter`/`toFrontMatterView`、12.2・12.3参照）も同様に単体テスト化する
 - UIロジック・Tauri連携部分は自動テスト化せず、実機起動＋スクリーンショットによる手動/半自動確認で担保する方針とした（Tauriアプリ全体をヘッドレスでE2Eテストする標準的な仕組みがないため）。タブ機能（`TabsContext`・`TabBar`・`TabPane`・複数ファイル同時監視）もUI状態とTauri連携が主体のため、この方針を踏襲し実機確認で担保する。「既に開いているファイルは既存タブへ切り替える」判定（`path`の配列検索）のように単純な処理は、既存のvitest対象（純粋関数）ほどの複雑さがないため個別の単体テストは設けない。
 
-## 11. 表示の拡大・縮小（ズーム）設計（requirements.md 3.11）
+## 11. 表示の拡大・縮小（ズーム）設計（requirement.md 3.11）
 
 ### 11.1 方針: 本文要素へのCSS `zoom` プロパティ
 
@@ -341,7 +341,7 @@ Windows専用の同期パス処理。`@tauri-apps/api/path`の非同期APIは`im
 - `title`は「表示倍率（クリックで100%に戻す、Ctrl+0）」とする。
 - 新しいアイコンは追加しない（数値を表示すること自体が役割のため）。
 
-## 12. フロントマター設計（requirements.md 3.12）
+## 12. フロントマター設計（requirement.md 3.12）
 
 ### 12.1 方針: 描画・出力の前に切り出す
 
@@ -368,7 +368,7 @@ type ParsedDocument =
   - 閉じの行が見つからない場合は、フロントマターではないとみなし、`kind: "none"`で元の文字列全体を本文とする（従来通りの表示になる）。
 - 本文は閉じの行の次の行から最後までとする。
 - YAMLの解釈には npm `yaml` パッケージを使い、**`schema: "failsafe"`**を指定する。
-  - failsafeスキーマでは、スカラー値はすべて書かれた通りの文字列になる（`date: 2026-10-08`を日付型に、`version: 1.10`を数値`1.1`に変換したりしない）。requirements.md 3.12の「`date`は書かれた文字列をそのまま表示する」を満たし、ほかの項目でも見た目が書いた内容から変わらない。
+  - failsafeスキーマでは、スカラー値はすべて書かれた通りの文字列になる（`date: 2026-10-08`を日付型に、`version: 1.10`を数値`1.1`に変換したりしない）。requirement.md 3.12の「`date`は書かれた文字列をそのまま表示する」を満たし、ほかの項目でも見た目が書いた内容から変わらない。
   - 配列・オブジェクトはそのまま構造として得られる。
 - 次の場合は`kind: "error"`とし、`raw`（`---`の間の元の文字列）とエラー内容を返す。
   - YAMLの構文エラー（`yaml`の例外メッセージをそのまま使う）
@@ -411,7 +411,7 @@ type ParsedDocument =
 ```
 
   - `title`・`byline`・`others`がすべて空の場合は`<header>`ごと描画しない。
-  - 題名に`h1`要素を**使わない**。`useHeadings`はコンテナ内の`h1`〜`h6`を目次に拾うため、`h1`にすると目次に出てしまう（requirements.md 3.12「目次には表示しない」）。見た目は`.markdown-body h1`と同じ大きさ・太さをCSSで当てる。
+  - 題名に`h1`要素を**使わない**。`useHeadings`はコンテナ内の`h1`〜`h6`を目次に拾うため、`h1`にすると目次に出てしまう（requirement.md 3.12「目次には表示しない」）。見た目は`.markdown-body h1`と同じ大きさ・太さをCSSで当てる。
   - `<dl>`は`display: grid; grid-template-columns: max-content 1fr;`の2列にし、`dd`には`overflow-wrap: anywhere`を指定して長い値を折り返す。文字は`0.85em`、色は既存の控えめな文字色（`opacity`）に合わせる。`others`と題名・bylineの間に区切り線（`border-top`）を引く。
   - ヘッダー全体と本文の間は、下に区切り線と余白を設けて、本文と区別できるようにする。
   - ヘッダーの直後に来る本文の最初の要素（多くは`h1`）の上余白は0にする（`.markdown-body .front-matter + *`）。ヘッダー自身の下余白と重なって間が空きすぎるのを防ぐ。
@@ -423,7 +423,7 @@ type ParsedDocument =
 - `convertMarkdownToDocx`の中で`parseFrontMatter(content)`を呼び、ASTの解析には`body`を渡す。呼び出し側（`useWordExport`）は変更しない。
 - `kind: "ok"`かつ`title`がある場合:
   - 文書の先頭に、`HeadingLevel.TITLE`・`TITLE_MARKS`・`TITLE_SPACING`（6.1の文書タイトルの書式）で題名の段落を出力する。
-  - `RasterResources.titleConsumed`を最初から`true`にして変換を始める。これで本文の`#`見出しはすべて通常の見出しの書式になる（requirements.md 3.12）。
+  - `RasterResources.titleConsumed`を最初から`true`にして変換を始める。これで本文の`#`見出しはすべて通常の見出しの書式になる（requirement.md 3.12）。
 - `byline`がある場合は、その次に`BODY_MARKS`・`BODY_SPACING`の段落を1つ出力する。文字列は画面表示と同じく`" ・ "`でつなぐ。
 - `others`は出力しない。
 - `new Document({ title, creator, ... })`で、文書のプロパティの「タイトル」に`title`、「作成者」に`author`（`toFrontMatterView`と同じく「、」でつないだもの）を設定する。無いものは設定しない。

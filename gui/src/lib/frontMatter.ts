@@ -23,7 +23,7 @@ const CLOSE_FENCE = /^(---|\.\.\.)[ \t]*$/;
 const NOT_A_MAPPING_MESSAGE = "フロントマターがキーと値の形式ではありません";
 
 /**
- * Splits a leading YAML front matter block off the Markdown source (requirements.md 3.12,
+ * Splits a leading YAML front matter block off the Markdown source (requirement.md 3.12,
  * spec.md 12.2). Done before any Markdown parsing so the block never reaches react-markdown or
  * the docx converter as an `<hr>` + setext heading.
  *

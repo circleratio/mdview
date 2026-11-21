@@ -1,8 +1,10 @@
-# mdview
+# mdview（GUI版）
 
 Markdownファイルを閲覧するためのWindowsデスクトップビューア（Tauri + React + TypeScript）。
 
-Mermaid記法による図表描画、KaTeX形式による数式表示に対応し、左ペインに見出しの目次、右ペインに本文を表示する2ペイン構成を持つ。詳細な仕様は [`requirements.md`](./requirements.md)、設計は [`spec.md`](./spec.md) を参照。
+Mermaid記法による図表描画、KaTeX形式による数式表示に対応し、左ペインに見出しの目次、右ペインに本文を表示する2ペイン構成を持つ。詳細な仕様は [`doc/requirement.md`](./doc/requirement.md)、設計は [`doc/spec.md`](./doc/spec.md) を参照。
+
+このディレクトリ（`gui/`）だけで完結しており、以下のコマンドはすべて `gui/` ディレクトリで実行する。
 
 ## 前提条件
 
@@ -46,7 +48,7 @@ npm run test        # Vitestによるユニットテスト（純粋関数のみ�
 npx tsc --noEmit     # 型チェック
 ```
 
-UI・Tauri連携部分の自動テストは無いため、`npm run tauri dev` で実機確認する（詳細は `spec.md` の「テスト方針」を参照）。
+UI・Tauri連携部分の自動テストは無いため、`npm run tauri dev` で実機確認する（詳細は `doc/spec.md` の「テスト方針」を参照）。
 
 ## Recommended IDE Setup
 

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window. The opened Markdown file itself is read-only; the only write path is the user-chosen destination of the Word-export save dialog (requirements.md 3.10/4, spec.md 6.4).",
+  "description": "Capability for the main window. The opened Markdown file itself is read-only; the only write path is the user-chosen destination of the Word-export save dialog (requirement.md 3.10/4, spec.md 6.4).",
   "windows": ["main"],
   "permissions": [
     "core:default",

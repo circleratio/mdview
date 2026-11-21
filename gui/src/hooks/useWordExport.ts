@@ -45,7 +45,7 @@ async function withContentZoomReset<T>(container: HTMLElement | null, task: () =
   }
 }
 
-/** Converts the active tab to a `.docx` file and saves it via a native save dialog (requirements.md 3.10, spec.md 6). */
+/** Converts the active tab to a `.docx` file and saves it via a native save dialog (requirement.md 3.10, spec.md 6). */
 export function useWordExport() {
   const { activeTab, setAppError } = useTabs();
 

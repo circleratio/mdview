@@ -6,7 +6,7 @@ interface FrontMatterHeaderProps {
 }
 
 /**
- * Shows the document's front matter above the rendered Markdown (requirements.md 3.12,
+ * Shows the document's front matter above the rendered Markdown (requirement.md 3.12,
  * spec.md 12.4). Rendered inside `.markdown-body`, so content zoom and in-page search cover it.
  *
  * The title deliberately isn't an `<h1>`: useHeadings collects every h1-h6 in the container

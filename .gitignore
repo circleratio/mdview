@@ -1,16 +1,9 @@
+# Common ignores for the whole repository.
+# Version-specific ignores live in gui/.gitignore and gui/src-tauri/.gitignore.
+
 # Logs
 logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
 
 # Editor directories and files
 .vscode/*

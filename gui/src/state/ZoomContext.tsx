@@ -26,7 +26,7 @@ interface ZoomContextValue {
 const ZoomContext = createContext<ZoomContextValue | null>(null);
 
 /**
- * App-wide content zoom (requirements.md 3.11): one level shared by every tab, persisted to
+ * App-wide content zoom (requirement.md 3.11): one level shared by every tab, persisted to
  * settings.json, plus the Ctrl +/-/0 shortcuts. Each TabPane applies the level to its own DOM
  * via usePaneZoom; this context only owns the number and the anchor hand-off (spec.md 11.3).
  */
@@ -97,7 +97,7 @@ export function ZoomProvider({ children }: { children: ReactNode }) {
     // Pinch gestures are re-enabled in WebView2 (webview_settings.rs) so a touchpad pinch reaches
     // usePaneZoom as ctrl+wheel; that also means an unhandled one would visually pinch-zoom the
     // whole page. Cancel every ctrl+wheel app-wide: the body pane's own listener still sees it
-    // and applies content zoom, while the toolbar/TOC stay unzoomed (requirements.md 3.11).
+    // and applies content zoom, while the toolbar/TOC stay unzoomed (requirement.md 3.11).
     const handler = (event: WheelEvent) => {
       if (event.ctrlKey) event.preventDefault();
     };

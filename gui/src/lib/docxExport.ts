@@ -80,7 +80,7 @@ const MONO_FONT = "Consolas";
 const CODE_SHADING = "F2F2F2";
 const QUOTE_BORDER_COLOR = "AAAAAA";
 const HYPERLINK_COLOR = "0563C1";
-// Fixed font assignment (requirements.md 3.10, spec.md 6.1). "游ゴシック Medium" is its own font
+// Fixed font assignment (requirement.md 3.10, spec.md 6.1). "游ゴシック Medium" is its own font
 // family name on Windows (not a bold variant of 游ゴシック), so it's set via `font`, not `bold`.
 // docx sizes are in half-points: 18pt -> 36, 14pt -> 28, 10.5pt -> 21. Title/heading color is
 // pinned to black at the run level because Word's default Title/Heading styles can carry a
@@ -96,7 +96,7 @@ const HEADING_MARKS: Marks = { font: HEADING_FONT, size: HEADING_SIZE, color: BL
 const BODY_MARKS: Marks = { font: BODY_FONT, size: BODY_SIZE };
 
 /**
- * Line spacing (requirements.md 3.10, spec.md 6.1): "1.5 line spacing" is defined as the gap
+ * Line spacing (requirement.md 3.10, spec.md 6.1): "1.5 line spacing" is defined as the gap
  * between lines being 0.5x the font size, i.e. line height = 1.5x the font size. Word's own
  * "multiple" line rule (`lineRule: AUTO`) instead multiplies the font's built-in default line
  * height (usually taller than its point size), which reads as too much extra gap. So `line` is
@@ -150,7 +150,7 @@ export interface DocxExportInput {
   container: HTMLElement | null;
 }
 
-/** Converts Markdown source into a `.docx` file's raw bytes (requirements.md 3.10 / spec.md 6). */
+/** Converts Markdown source into a `.docx` file's raw bytes (requirement.md 3.10 / spec.md 6). */
 export async function convertMarkdownToDocx({ content, dir, container }: DocxExportInput): Promise<Uint8Array> {
   // Front matter never reaches the Markdown parser; only title/author/date are carried over (spec.md 12.5).
   const parsed = parseFrontMatter(content);
@@ -393,7 +393,7 @@ async function convertInline(nodes: MdNode[], marks: Marks, res: RasterResources
           out.push(new ExternalHyperlink({ link: node.url as string, children: runs }));
         } else {
           // Relative Markdown links / same-document anchors have no meaningful target once
-          // exported to a standalone Word file, so only the visible text is kept (requirements.md 3.10).
+          // exported to a standalone Word file, so only the visible text is kept (requirement.md 3.10).
           out.push(...runs);
         }
         break;
@@ -458,7 +458,7 @@ async function buildImageRun(url: string, res: RasterResources): Promise<ImageRu
   }
 }
 
-/** Rasterizes a rendered DOM element (Mermaid SVG container or a KaTeX span) to a PNG at its on-screen size (requirements.md 3.10: no upscaling). */
+/** Rasterizes a rendered DOM element (Mermaid SVG container or a KaTeX span) to a PNG at its on-screen size (requirement.md 3.10: no upscaling). */
 async function rasterizeElementToImageRun(el: HTMLElement): Promise<ImageRun | null> {
   try {
     const rect = el.getBoundingClientRect();

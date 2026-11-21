@@ -395,7 +395,7 @@ mark[data-markjs].search-match--current {
 }
 
 .markdown-body {
-  /* Content zoom (requirements.md 3.11); the variable is set per tab by usePaneZoom. */
+  /* Content zoom (requirement.md 3.11); the variable is set per tab by usePaneZoom. */
   zoom: var(--content-zoom, 1);
   max-width: 860px;
   margin: 0 auto;
@@ -588,7 +588,7 @@ mark[data-markjs].search-match--current {
   padding: 0;
 }
 
-/* Front matter (requirements.md 3.12). The title mirrors `.markdown-body h1` without being one,
+/* Front matter (requirement.md 3.12). The title mirrors `.markdown-body h1` without being one,
    so it stays out of the TOC. */
 .front-matter {
   margin: 0.4em 0 1.6em;
