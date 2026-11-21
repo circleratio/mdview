@@ -1,0 +1,33 @@
+# mdview
+
+Markdownファイルを整形表示するビューア。用途に合わせて2つの版を用意している。
+
+| 版 | ディレクトリ | 実装 | 対象環境 | 主な特徴 |
+|---|---|---|---|---|
+| GUI版 | [`gui/`](./gui/) | Tauri + React + TypeScript | Windows | タブ、Mermaid図・KaTeX数式の描画、Word形式での保存、ズーム、フロントマター表示 |
+| TUI版 | [`tui/`](./tui/) | Python + Textual | Linux / WSL / macOS | less/vim風のキー操作、標準入力からの表示、リンクの行き来（戻る／進む） |
+
+2つの版は互いに独立しており、コードや依存関係を共有しない。ビルド・実行・テストの方法は各ディレクトリの README を参照。
+
+- GUI版: [`gui/README.md`](./gui/README.md)（要求仕様・設計・実装計画は [`gui/doc/`](./gui/doc/)）
+- TUI版: [`tui/README.md`](./tui/README.md)（要求仕様・設計・実装計画は [`tui/doc/`](./tui/doc/)）
+
+## ディレクトリ構成
+
+```
+mdview/
+├── README.md     # this file
+├── LICENSE
+├── gui/          # GUI version (Tauri); see gui/README.md
+│   ├── doc/      # requirement.md / spec.md / plan.md
+│   ├── src/      # React frontend
+│   └── src-tauri/# Rust backend
+└── tui/          # TUI version (Python + Textual); see tui/README.md
+    ├── doc/      # requirement.md / spec.md / plan.md
+    ├── src/mdview_tui/
+    └── tests/
+```
+
+## ライセンス
+
+[LICENSE](./LICENSE) を参照。

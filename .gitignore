@@ -1,5 +1,5 @@
 # Common ignores for the whole repository.
-# Version-specific ignores live in gui/.gitignore and gui/src-tauri/.gitignore.
+# Version-specific ignores live in gui/.gitignore, gui/src-tauri/.gitignore and tui/.gitignore.
 
 # Logs
 logs

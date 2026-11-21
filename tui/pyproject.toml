@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mdview-tui"
+dynamic = ["version"]
+description = "A TUI viewer for Markdown files"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=2.0",
+    "markdown-it-py[linkify]>=3.0",
+]
+
+[project.scripts]
+mdview-tui = "mdview_tui.cli:main"
+
+[tool.hatch.version]
+path = "src/mdview_tui/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mdview_tui"]
