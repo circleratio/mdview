@@ -21,6 +21,7 @@ from textual.strip import Strip
 
 from mdview_tui.document import Heading, LinkRegion, RenderedDoc
 from mdview_tui.frontmatter import ERROR_PREFIX, FrontMatter, to_view
+from mdview_tui.links import display_href
 from mdview_tui.slug import SlugRegistry
 from mdview_tui.themes import MdTheme
 
@@ -112,7 +113,8 @@ class _Renderer:
             elif kind == "image":
                 src = str(node.attrs.get("src", ""))
                 alt = _plain(node) or str(node.attrs.get("alt", ""))
-                text.append(f"[image: {alt}]({src})", style + self.link_style(src))
+                # Show the path as written; the link itself keeps the encoded form for resolve().
+                text.append(f"[image: {alt}]({display_href(src)})", style + self.link_style(src))
             elif kind == "html_inline":
                 text.append(node.content, style + self.theme.html)
             elif node.children:

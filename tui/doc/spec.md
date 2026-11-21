@@ -199,7 +199,7 @@ def render(tokens: list[Token], width: int, theme: MdTheme,
 | 段落 | 端末幅で折り返し（`Text.wrap`、全角文字幅を考慮） |
 | 強調・太字・取り消し線・インラインコード | Rich の style（italic / bold / strike / 背景色） |
 | リンク | 下線 + テーマ色。外部リンクは本文のみ表示（URL は付記しない） |
-| 画像 | `[image: <alt>](<src>)` という文字列全体をリンク（リンク先は `src`）として表示 |
+| 画像 | `[image: <alt>](<src>)` という文字列全体をリンク（リンク先は `src`）として表示。表示する `src` は `links.display_href()` で戻した文字列 |
 | 箇条書き | `•` / `◦` / `▪`（ネスト階層で切替）、番号付きは `1.` 形式、2文字ずつインデント |
 | タスクリスト | `☐` / `☑` |
 | 引用 | 左に `▌` を付け、ネスト分だけ重ねる |
@@ -253,7 +253,10 @@ class Target:
     url: str | None = None
 
 def resolve(href: str, base: Path | None) -> Target: ...
+def display_href(href: str) -> str: ...
 ```
+
+- markdown-it はすべてのリンクの `href` と画像の `src` を `normalizeLink` でパーセントエンコードする（`[x](図.png)` は `%E5%9B%B3.png`、`<my image.png>` は `my%20image.png` になる）。`resolve` はパスとアンカーを `unquote` してから扱う。画面に出す文字列（画像の表示、「サポートしていないリンク」の通知）は `display_href`（`unquote`。不正な並びはそのまま残る）で書かれた通りの文字に戻す。
 
 | href | 判定 |
 |---|---|
@@ -478,7 +481,7 @@ def to_view(data: dict[str, object]) -> FrontMatterView: ...
 | `render`（フロントマター） | 題名・作成者・日付・その他の項目・区切りの出力、点線の区切りの有無、目次（`headings`）に題名が入らないこと、`plain_lines` に含まれること、エラー表示、空のフロントマターで何も出ないこと、フロントマターがあっても本文の見出しの `anchors` のソース行がファイルの行番号と一致すること |
 | `slug` | 英字・記号・日本語・重複見出し |
 | `search` | 大文字小文字無視、全角文字のセル位置、0件、wrap around |
-| `links` | アンカー・外部・相対 `.md`・`#` 付き・URL エンコード・非対応ファイル・stdin 時 |
+| `links` | アンカー・外部・相対 `.md`・`#` 付き・URL エンコード・非対応ファイル・stdin 時、`display_href`（復元・不正な並び） |
 | `history` | push で forward がクリアされる、back/forward の境界（空のとき None） |
 | `watcher` | 変更なし・更新・削除・再作成（一時ディレクトリで検証） |
 | `editor` | `VISUAL` 優先、`EDITOR`、未設定時の OS 別既定、引数付きコマンドの分割 |

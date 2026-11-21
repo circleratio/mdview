@@ -18,6 +18,15 @@ class Target:
     url: str | None = None
 
 
+def display_href(href: str) -> str:
+    """Return a link target as the user wrote it, for showing on screen.
+
+    markdown-it percent-encodes every href and image src (normalizeLink), so
+    `[x](図.png)` arrives as `%E5%9B%B3.png`. Malformed escapes are left as they are.
+    """
+    return unquote(href)
+
+
 def resolve(href: str, base: Path | None) -> Target:
     href = href.strip()
     if not href:

@@ -181,6 +181,8 @@ class LinkTest(AppTestBase):
             self.assertEqual(app.source.path, self.sample)
             app.open_href("logo.png")
             self.assertEqual(app.status.message, "サポートしていないリンク: logo.png")
+            app.open_href("%E5%9B%B3.png")
+            self.assertEqual(app.status.message, "サポートしていないリンク: 図.png")
             with mock.patch("webbrowser.open", return_value=True) as browser:
                 app.open_href("https://example.com")
             browser.assert_called_once_with("https://example.com")

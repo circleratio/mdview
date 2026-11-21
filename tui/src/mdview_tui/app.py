@@ -15,7 +15,7 @@ from mdview_tui.editor import editor_command
 from mdview_tui.errors import MdviewError
 from mdview_tui.history import History, Location
 from mdview_tui.keys import bindings
-from mdview_tui.links import resolve
+from mdview_tui.links import display_href, resolve
 from mdview_tui.parser import parse_document
 from mdview_tui.source import Source, load_file
 from mdview_tui.themes import THEMES, toggle
@@ -185,7 +185,7 @@ class MdviewApp(App):
             if not webbrowser.open(target.url):
                 self.message("ブラウザを開けませんでした")
         else:
-            self.message(f"サポートしていないリンク: {href}")
+            self.message(f"サポートしていないリンク: {display_href(href)}")
 
     def _jump_anchor(self, anchor: str, push: bool) -> None:
         doc = self.view.doc

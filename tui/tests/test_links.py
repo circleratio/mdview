@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from mdview_tui.links import Target, resolve
+from mdview_tui.links import Target, display_href, resolve
 
 BASE = Path("/docs/guide/index.md")
 
@@ -33,6 +33,16 @@ class ResolveTest(unittest.TestCase):
 
     def test_stdin_uses_cwd(self):
         self.assertEqual(resolve("a.md", None).path, Path.cwd() / "a.md")
+
+
+class DisplayHrefTest(unittest.TestCase):
+    def test_decodes_percent_encoding(self):
+        self.assertEqual(display_href("%E5%9B%B3.png"), "図.png")
+        self.assertEqual(display_href("my%20image.png"), "my image.png")
+
+    def test_keeps_malformed_escapes(self):
+        self.assertEqual(display_href("100%"), "100%")
+        self.assertEqual(display_href("a%zzb"), "a%zzb")
 
 
 if __name__ == "__main__":

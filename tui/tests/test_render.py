@@ -102,6 +102,11 @@ class BlockTest(unittest.TestCase):
         self.assertEqual(doc.plain_lines, ["[image: alt](img.png)"])
         self.assertEqual(doc.links[0].href, "img.png")
 
+    def test_image_path_is_shown_as_written(self):
+        doc = doc_of("![図](<図 1.png>)\n", width=60)
+        self.assertEqual(doc.plain_lines, ["[image: 図](図 1.png)"])
+        self.assertEqual(doc.links[0].href, "%E5%9B%B3%201.png")
+
     def test_wrap(self):
         doc = doc_of("aaa bbb ccc ddd", width=10)
         self.assertEqual(doc.plain_lines, ["aaa bbb", "ccc ddd"])
