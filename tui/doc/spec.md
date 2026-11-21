@@ -34,6 +34,10 @@ mdview/                  # repository root
     ├── .gitignore
     ├── pyproject.toml
     ├── README.md
+    ├── portable/
+    │   └── mdview-tui.py    # portable single-file version (generated, do not edit)
+    ├── tools/
+    │   └── bundle.py        # generates portable/mdview-tui.py from src/mdview_tui/
     ├── doc/
     │   ├── requirement.md
     │   ├── spec.md
@@ -77,7 +81,8 @@ mdview/                  # repository root
         ├── test_history.py
         ├── test_watcher.py
         ├── test_editor.py
-        └── test_app.py      # Textual Pilot based
+        ├── test_app.py      # Textual Pilot based
+        └── test_portable.py # portable version: up to date, starts and runs
 ```
 
 ## 3. モジュールごとの責務と主要シグネチャ
@@ -468,6 +473,35 @@ def to_view(data: dict[str, object]) -> FrontMatterView: ...
 - `requires-python = ">=3.10"`
 - 開発環境では pip が無い場合があるため、`PYTHONPATH=src python3 -m mdview_tui` での実行も README に記載する
 
+### 6.1 ポータブル版
+
+依存ライブラリが入っている環境でインストールせずに動かすため、パッケージの全モジュールを1ファイルにまとめた `portable/mdview-tui.py` をリポジトリに同梱する。正本はパッケージで、ポータブル版は `tools/bundle.py` で生成する。
+
+```console
+$ python3 tools/bundle.py          # regenerate portable/mdview-tui.py
+$ python3 tools/bundle.py --check  # exit 1 if portable/mdview-tui.py is out of date
+```
+
+```python
+# tools/bundle.py
+def bundle(package_dir: Path) -> str: ...   # returns the generated source text
+def main(argv: list[str] | None = None) -> int: ...
+```
+
+生成の規則:
+
+- 対象は `src/mdview_tui/` 以下の `.py`。`__main__.py` と `widgets/__init__.py`（再エクスポートだけ）は含めない
+- 並び順はパッケージ内の import の依存関係から決める（依存される側を先に置く）。同じ依存段のものはパス名の順。関数の中に書いた遅延 import（`cli.py` の `app` の import）も依存として扱う。循環があれば生成を失敗させる
+- パッケージ内の import（`from mdview_tui... import ...`）は消す。関数の中のものも消す
+- 最上位の外部ライブラリ・標準ライブラリの import は先頭にまとめ、同じ文は1つにする。`from __future__ import annotations` は全体の先頭に1つだけ置く
+- 各モジュールの docstring は消し、代わりに `# ---- mdview_tui/<path> ----` の区切りのコメントを入れる
+- 先頭にシバン `#!/usr/bin/env python3`、生成物であること・バージョン・必要な依存ライブラリ・再生成のコマンドを書いたコメントを入れ、末尾に `if __name__ == "__main__": sys.exit(main())` を置く
+- 次の場合は1ファイルにすると意味が変わるので、生成を失敗させる（理由を stderr に出し終了コード 1）
+  - モジュールの最上位で定義される名前（関数・クラス・代入）が、別のモジュールと重なる
+  - パッケージ内の import に `as` の別名や `import mdview_tui.xxx` の形がある
+- 生成結果を `compile()` で構文チェックしてから書き出す。改行は LF、文字コードは UTF-8
+- `--check` では書き出さずに、既存のファイルと生成結果が一致するかだけを調べる（一致すれば 0、違えば理由を出して 1）
+
 ## 7. テスト方針
 
 - テストは標準ライブラリの `unittest` で書く（pytest でもそのまま実行可能な形にする）。実行: `PYTHONPATH=src python3 -m unittest discover -s tests -t .`
@@ -486,4 +520,5 @@ def to_view(data: dict[str, object]) -> FrontMatterView: ...
 | `history` | push で forward がクリアされる、back/forward の境界（空のとき None） |
 | `watcher` | 変更なし・更新・削除・再作成（一時ディレクトリで検証） |
 | `editor` | `VISUAL` 優先、`EDITOR`、未設定時の OS 別既定、引数付きコマンドの分割 |
+| `portable` | 同梱の `portable/mdview-tui.py` が `bundle()` の結果と一致すること（食い違いの検出）、`PYTHONPATH` を付けずに別ディレクトリから `--version`・存在しないファイル（終了コード 1）が動くこと、モジュールとして読み込み Pilot で起動・スクロール・検索・目次・リンク遷移が動くこと、名前の重なり・別名 import で `bundle()` が失敗すること |
 | `app` | 起動して本文表示、各スクロールキー、`/` 検索で一致数表示と `n`/`N`、`t` から見出しジャンプ、Tab+Enter で相対リンク遷移と Backspace / `L` で戻る・進む、アンカー・存在しないリンク・非対応リンク・外部リンク、ファイル書き換えで自動再読込・削除通知、`r` 再読込で行維持、フロントマターの表示と検索・自動再読込での更新、エディタ起動後の再読込、`T` でテーマ切替、`?` ヘルプ、リサイズで位置維持、標準入力時の制限 |

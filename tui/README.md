@@ -36,6 +36,20 @@ $ PYTHONPATH=src python3 -m mdview_tui README.md
 
 Debian / Ubuntu 系では `apt install python3-textual python3-markdown-it python3-linkify-it python3-yaml` で依存ライブラリを入れられます。
 
+### ポータブル版（1ファイルで実行する場合）
+
+[`portable/mdview-tui.py`](portable/mdview-tui.py) は、全モジュールを1ファイルにまとめたポータブル版です。依存ライブラリが入っていれば、このファイルだけを好きな場所にコピーして実行できます。機能・オプション・終了コードはインストール版と同じです。
+
+```console
+$ python3 portable/mdview-tui.py README.md
+$ python3 portable/mdview-tui.py --version
+mdview-tui 0.1.0
+
+# 実行権限を付けてパスの通った場所に置けば、コマンドとして使えます
+$ install -m 755 portable/mdview-tui.py ~/.local/bin/mdview-tui
+$ mdview-tui README.md
+```
+
 ## 使いかた
 
 ```console
@@ -141,6 +155,17 @@ $ PYTHONPATH=src python3 -m unittest discover -s tests -t .
 ```
 
 ソースは `src/mdview_tui/`、テストは `tests/` にあります。
+
+### ポータブル版の再生成
+
+ポータブル版は `src/mdview_tui/` から `tools/bundle.py` で生成しています。直接編集せず、ソースを変更したら再生成してコミットしてください。同梱のファイルが古いままだとテスト（`tests/test_portable.py`）が失敗します。
+
+```console
+$ python3 tools/bundle.py          # portable/mdview-tui.py を作り直す
+$ python3 tools/bundle.py --check  # 最新かどうかだけを調べる（古ければ終了コード 1）
+```
+
+モジュールをまたいで同じ名前の関数・クラス・変数を定義したり、パッケージ内の import に `as` の別名を付けたりすると、1ファイルにまとめられないため生成が失敗します。
 
 ## ドキュメント
 

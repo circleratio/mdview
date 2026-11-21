@@ -17,6 +17,14 @@ less/vim 風のキー操作でスクロール・検索・目次ジャンプ・�
 - 対象環境は Linux / WSL / macOS。Windows ネイティブ（Windows Terminal）はベストエフォート
 - pip / uv でインストールでき、コマンド名は `mdview-tui` とする
 
+### ポータブル版
+
+- 依存ライブラリ（Textual、markdown-it-py（linkify 付き）、PyYAML）が入っている環境なら、インストールせずに1ファイルだけで動く「ポータブル版」を用意する
+- ポータブル版は `tui/portable/mdview-tui.py` としてリポジトリに同梱する。`python3 mdview-tui.py [OPTIONS] [FILE]` で起動でき、実行権限があれば直接実行もできる
+- 機能・CLI・終了コード・メッセージはインストール版と同じとする（`--version` の表示や `usage:` のコマンド名も `mdview-tui`）
+- ソースの正本はパッケージ（`src/mdview_tui/`）とし、ポータブル版はそこから生成する。ポータブル版を直接編集しない
+- 同梱しているポータブル版が正本と食い違っていたら、テストで検出できるようにする
+
 ### 入力
 
 - 引数で指定した Markdown ファイル1つを表示する（複数ファイル・ディレクトリ指定は対象外）
@@ -157,6 +165,11 @@ $ curl -s https://example.com/doc.md | mdview-tui -
 
 # バージョン表示
 $ mdview-tui --version
+mdview-tui 0.1.0
+
+# ポータブル版（インストールせずに実行）
+$ python3 portable/mdview-tui.py README.md
+$ python3 portable/mdview-tui.py --version
 mdview-tui 0.1.0
 
 # 存在しないファイル

@@ -1,82 +1,74 @@
-# 実装計画: フロントマター
+# 実装計画: ポータブル版
 
-対象: `doc/requirement.md`「フロントマター」／設計: `doc/spec.md` 3.18（あわせて 3.3・3.5・3.12・3.13・3.16）
+対象: `doc/requirement.md`「ポータブル版」／設計: `doc/spec.md` 6.1（あわせて 2章・7章）
 
-（最初の実装（S1〜S10）の計画は、git の履歴を参照）
+（これまでの計画（最初の実装 S1〜S10、フロントマター F1〜F6）は、git の履歴を参照）
 
 テストは `PYTHONPATH=src python3 -m unittest discover -s tests -t .` で実行する。各ステップの終わりで全件成功する状態を保つ。
 
 ## 依存関係
 
 ```
-F1 (frontmatter) ─ F2 (parser / themes / render) ─ F3 (view / app) ─ F4 (docs) ─ F5 (手動確認) ─ F6 (最終確認)
+P1 (bundle.py) ─ P2 (生成・同梱) ─ P3 (test_portable) ─ P4 (docs) ─ P5 (手動確認) ─ P6 (最終確認)
 ```
 
-- F1 は単独で実装・テストできる。F2 は F1 に、F3 は F2 に依存する
-- F4 の README の更新は F1 の時点で書けるが、手順を実際に試してから確定させる
+- P1 で生成の規則を作り、P2 でその結果をリポジトリに入れる。P3 のテストは同梱したファイルを前提にする
+- P4 の README の手順は P5 で実際に試してから確定させる
 
-## F1. 切り出しと表示用データへの変換（frontmatter.py）
+## P1. 生成スクリプト（tools/bundle.py）
 
-- やること: `pyproject.toml` に `PyYAML>=6.0` を追加。`split_front_matter`、`format_value`、`format_author`、`to_view` を spec 3.18 の通りに実装する。`tests/test_frontmatter.py` を追加する
-- 完了条件: `tests/test_frontmatter.py`（spec 7章の `frontmatter` の項目）が成功する
+- やること: spec 6.1 の規則どおりに `bundle()` と `main()`（`--check` 付き）を実装する。依存関係は `ast` でパッケージ内の import を読み取って決める
+- 完了条件: `python3 tools/bundle.py` が成功し、生成物が `compile()` を通る。モジュール間で名前が重なるソースを与えると失敗する
 
-## F2. 解析と描画（parser / themes / render）
+## P2. ポータブル版の生成と同梱
 
-- やること: `ParsedDocument` と `parse_document`、テーマに `meta` / `error` を追加（dark / light）、`render()` の `front_matter` 引数と `_front_matter()` ブロック
-- 完了条件: `tests/test_render.py` に追加するフロントマターのテスト（spec 7章の `render`（フロントマター）の項目）と既存のテストが成功する
+- やること: `portable/mdview-tui.py` を生成し、git で実行権限を付けて追加する
+- 完了条件: `python3 portable/mdview-tui.py --version` が `mdview-tui 0.1.0` を出す。`python3 tools/bundle.py --check` が 0 を返す
 
-## F3. 表示への組み込み（view / app）
+## P3. テスト（tests/test_portable.py）
 
-- やること: `MarkdownView.set_tokens` を `set_document(parsed, line)` に置き換え、`MdviewApp._show` から `parse_document` の結果を渡す
-- 完了条件: `tests/test_app.py` に追加するテスト（フロントマター付きの文書を開くと題名が表示され、目次に題名が出ない／`/` で題名を検索できる／ファイルを書き換えると題名の変更が反映される）と既存のテストが成功する
+- やること: spec 7章の `portable` の項目のテストを追加する
+- 完了条件: 追加したテストと既存のテストが全件成功する。`src/` のどれかのモジュールを書き換えて再生成しないと、食い違いのテストが失敗する
 
-## F4. ドキュメント
+## P4. ドキュメント
 
-- やること: `README.md` の機能一覧・必要環境（PyYAML、Debian / Ubuntu の `python3-yaml`）を更新する。`doc/common.md` にフロントマターの共通の決まりを加え、7章の差異1を消す
-- 完了条件: README の手順どおりに依存を入れて起動できる
+- やること: `tui/README.md` にポータブル版の使いかたと再生成の手順（開発者向け）を書く。リポジトリ全体の `README.md` のディレクトリ構成にも載せる
+- 完了条件: README の手順どおりに実行できる
 
-## F5. 手動動作確認
+## P5. 手動動作確認
 
 ```console
 $ cd tui
-$ export PYTHONPATH=src
-$ cat > /tmp/fm.md <<'MD'
----
-title: 設計メモ
-author: [山田 太郎, 佐藤 花子]
-date: 2026-10-08
-version: 1.10
-tags: [md, viewer]
----
+$ unset PYTHONPATH
 
-# はじめに
+# 別のディレクトリから起動できること。表示・キー操作がインストール版と同じであること
+$ (cd /tmp && python3 "$OLDPWD/portable/mdview-tui.py" "$OLDPWD/README.md")
 
-本文。
-
----
-
-区切りの後。
-MD
-
-# 表示例（doc/requirement.md「フロントマターの表示例」）と一致すること。t で目次に「はじめに」だけが出ること、/設計 で題名が一致すること
-$ python3 -m mdview_tui /tmp/fm.md
-
-# 別端末で title を書き換えて自動再読込で反映されること
-$ sed -i 's/設計メモ/設計メモ v2/' /tmp/fm.md
+# 直接実行
+$ ./portable/mdview-tui.py --theme light doc/spec.md
 
 # 標準入力
-$ python3 -m mdview_tui < /tmp/fm.md
+$ cat README.md | python3 portable/mdview-tui.py
 
-# 構文エラー: 「フロントマターを解釈できませんでした」と元の文字列が表示され、本文は表示されること
-$ printf -- '---\ntitle: [oops\n---\n\n# Body\n' | python3 -m mdview_tui
+# バージョン・異常系（終了コードとメッセージがインストール版と同じこと）
+$ python3 portable/mdview-tui.py --version
+mdview-tui 0.1.0
+$ python3 portable/mdview-tui.py nofile.md; echo $?
+mdview-tui: nofile.md: No such file or directory
+1
+$ python3 portable/mdview-tui.py </dev/tty; echo $?
+usage: mdview-tui [-h] [-V] [--theme {dark,light}] [--no-watch] [FILE]
+mdview-tui: error: no input (specify FILE or pipe to stdin)
+2
 
-# 閉じの行が無い: これまで通り水平線として表示されること
-$ printf -- '---\ntitle: x\n\n# Body\n' | python3 -m mdview_tui
+# 再生成と食い違いの検出
+$ python3 tools/bundle.py --check; echo $?
+0
 ```
 
-- 完了条件: 表示が `doc/requirement.md` の表示例・各項目と一致する。ライト／ダークの両方で読める
+- 完了条件: 出力が `doc/requirement.md` の使用例と一致する
 
-## F6. 最終確認
+## P6. 最終確認
 
-- やること: テスト全件の実行、`doc/requirement.md`「フロントマター」の各項目と実装の突き合わせ、`__pycache__` などの副産物の削除
+- やること: テスト全件の実行、`doc/requirement.md`「ポータブル版」の各項目と実装の突き合わせ、`__pycache__` などの副産物の削除
 - 完了条件: テストが全件成功し、要求仕様に未対応の項目がない
