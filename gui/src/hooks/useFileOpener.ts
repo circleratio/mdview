@@ -1,10 +1,11 @@
 import { useCallback, useRef } from "react";
-import { exists, readTextFile } from "@tauri-apps/plugin-fs";
+import { exists, readFile } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-dialog";
 import { dirname } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
 import { useTabs } from "../state/TabsContext";
 import { useRecentFiles } from "./useRecentFiles";
+import { decodeUtf8 } from "../lib/textFile";
 
 export function useFileOpener() {
   const {
@@ -44,7 +45,7 @@ export function useFileOpener() {
         if (!fileExists) {
           throw new Error(`ファイルが見つかりません: ${path}`);
         }
-        const content = await readTextFile(path);
+        const content = decodeUtf8(await readFile(path), path);
         const dir = await dirname(path);
         setTabDocument(path, dir, content);
         setAppError(null);
@@ -77,7 +78,7 @@ export function useFileOpener() {
         if (!fileExists) {
           throw new Error(`ファイルが見つかりません: ${path}`);
         }
-        const content = await readTextFile(path);
+        const content = decodeUtf8(await readFile(path), path);
         const dir = await dirname(path);
         setTabDocument(path, dir, content);
         await invoke("start_watching", { path });

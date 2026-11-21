@@ -10,7 +10,7 @@
     "dialog:allow-save",
     "store:default",
     "fs:allow-exists",
-    "fs:allow-read-text-file",
+    "fs:allow-read-file",
     "fs:allow-write-file",
     {
       "identifier": "fs:scope",

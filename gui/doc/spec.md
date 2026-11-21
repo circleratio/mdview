@@ -71,6 +71,7 @@ src/
     links.ts                         # リンク先の判定・パーセントエンコードの復元（純粋関数、テスト対象、5.3参照）
     displayPath.ts                   # UI表示用のファイル名抽出
     docxExport.ts                       # Markdown AST → docxパッケージのドキュメントツリーへの変換（6章参照）
+    textFile.ts                              # ファイルのバイト列をUTF-8として厳密に解釈（純粋関数、テスト対象、4.1参照）
     settingsStore.ts                      # settings.jsonストアの共有ローダー（エディタ設定・ズーム倍率で共用）
     zoom.ts                                 # ズーム倍率の計算（純粋関数、テスト対象、11章参照）
     frontMatter.ts                            # フロントマターの切り出し・表示用データへの変換（純粋関数、テスト対象、12章参照）
@@ -96,7 +97,8 @@ src/
 
 ### 3.3 権限設計（`capabilities/default.json`）
 
-- `core:default`, `opener:default`, `dialog:allow-open`, `store:default`, `fs:allow-exists`, `fs:allow-read-text-file`
+- `core:default`, `opener:default`, `dialog:allow-open`, `store:default`, `fs:allow-exists`, `fs:allow-read-file`
+  - ファイルは`readTextFile`ではなく`readFile`（バイト列）で読むため、`fs:allow-read-text-file`ではなく`fs:allow-read-file`を許可する（理由は4.1の`useFileOpener`の項を参照）。どちらも読み取りのみの権限
 - `fs:scope`に`{"path": "**/*"}`を許可し、ユーザーが選んだ任意の場所のファイルを読み取れるようにする
 - **書き込み・削除系の権限は一切付与しない**（要求仕様3.7「閲覧専用」を権限レベルで担保）
 - `tauri.conf.json`の`app.security.assetProtocol`を`enable:true, scope:["**"]`にし、Rust依存の`tauri` cargo featureに`protocol-asset`を追加。ローカル画像を`convertFileSrc()`経由で表示するために必要。
@@ -117,7 +119,7 @@ src/
 
 | フック | 役割 |
 | --- | --- |
-| `useFileOpener` | `openTab(path, { anchor })`と`reloadTab(path)`を提供。`openTab`は既に同じpathのタブがあれば`setActiveTab`した上で`addRecentFile`を呼ぶ（新規タブを作らない場合も「開いた」扱いとして最近使ったファイル一覧の先頭に繰り上げる、requirement.md 3.1）。無ければ`loading:true`の仮タブを追加して即座にアクティブにし、`exists`確認→`readTextFile`→`dirname`取得→`setTabDocument`→`addRecentFile`→Rust`start_watching`呼び出しを行う。失敗時は`removeTab`でタブごと破棄しつつ`setAppError`＋`removeRecentFile`（新規タブが壊れたまま残ることはない）。`reloadTab`は既存タブに対してのみ動作し、失敗時はタブを消さず`setTabError`のみ行う（stale contentの上にエラーバナーを重ねる、単一ファイル版と同じ見た目）。ダイアログ経由(`openViaDialog`)・ドラッグ&ドロップ・最近使ったファイル選択・相対Markdownリンククリックは、いずれもこの`openTab`を呼ぶ薄いラッパー。 |
+| `useFileOpener` | `openTab(path, { anchor })`と`reloadTab(path)`を提供。`openTab`は既に同じpathのタブがあれば`setActiveTab`した上で`addRecentFile`を呼ぶ（新規タブを作らない場合も「開いた」扱いとして最近使ったファイル一覧の先頭に繰り上げる、requirement.md 3.1）。無ければ`loading:true`の仮タブを追加して即座にアクティブにし、`exists`確認→`readFile`でバイト列を読み、`lib/textFile.ts`の`decodeUtf8`でUTF-8として解釈→`dirname`取得→`setTabDocument`→`addRecentFile`→Rust`start_watching`呼び出しを行う。失敗時は`removeTab`でタブごと破棄しつつ`setAppError`＋`removeRecentFile`（新規タブが壊れたまま残ることはない）。`reloadTab`は既存タブに対してのみ動作し、失敗時はタブを消さず`setTabError`のみ行う（stale contentの上にエラーバナーを重ねる、単一ファイル版と同じ見た目）。ダイアログ経由(`openViaDialog`)・ドラッグ&ドロップ・最近使ったファイル選択・相対Markdownリンククリックは、いずれもこの`openTab`を呼ぶ薄いラッパー。`readTextFile`を使わないのは、plugin-fsが`new TextDecoder("utf-8")`（`fatal`なし）で解釈するため。UTF-8として正しくないバイト（Shift_JISなど）が黙って置換文字（U+FFFD）になり、エラーにならずに文字化けしたまま表示されてしまう。`decodeUtf8`は`fatal: true`で解釈し、失敗したら`UTF-8 として読み込めないファイルです: <path>`の`Error`を投げる（他の読み込み失敗と同じく、新規オープンならタブを破棄してエラーバナー、再読込ならタブのエラー表示）。先頭のBOMは`TextDecoder`の既定の動作で取り除かれる。 |
 | `useFileWatcher` | アプリ起動時に一度だけ`file-changed`イベントを購読し、payloadのpathが現在開いているいずれかのタブのpathと一致すれば、そのタブに対して`reloadTab`を呼ぶ。`tabs`配列は常に最新を参照できるようrefで保持し、タブの増減のたびに購読を張り直したりはしない。 |
 | `useRecentFiles` | `@tauri-apps/plugin-store`に`recentFiles`配列（最大10件、重複除去）を永続化する。変更なし。 |
 | `useHeadings` | レンダリング後のDOMを`querySelectorAll('h1..h6')`で走査して見出しツリーを構築し、`IntersectionObserver`で画面内に入っている見出しのうち最上部のものを「アクティブ」とする。ロジックは変更なく、`TabPane`ごとに1インスタンス生成される。 |
