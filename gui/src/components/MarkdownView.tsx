@@ -1,6 +1,7 @@
 import { useMemo, type RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import { getMarkdownComponents, markdownRehypePlugins, markdownRemarkPlugins } from "../lib/markdown";
+import { markdownUrlTransform } from "../lib/links";
 import type { ParsedDocument } from "../lib/frontMatter";
 import { FrontMatterHeader } from "./FrontMatterHeader";
 
@@ -26,6 +27,7 @@ export function MarkdownView({ parsed, dir, containerRef }: MarkdownViewProps) {
           remarkPlugins={markdownRemarkPlugins}
           rehypePlugins={markdownRehypePlugins}
           components={components}
+          urlTransform={markdownUrlTransform}
         >
           {parsed.body}
         </ReactMarkdown>

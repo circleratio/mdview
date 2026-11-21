@@ -188,12 +188,15 @@ src/
 
 `dir`は自タブの`TabDocumentContext`から取得するため、リンクが含まれるタブ自身のディレクトリを基準に相対パスが解決される。
 
+- **`urlTransform`（`markdownUrlTransform`）**: react-markdownは既定の`defaultUrlTransform`で、`http(s)`/`mailto`/`irc(s)`/`xmpp`以外の「プロトコル」を持つ`href`/`src`を空文字列にする。最初の`:`が`/`・`?`・`#`より前にあればプロトコルと見なすため、Windowsの絶対パス（`C:\x.png`、`C:/x.md`、`normalizeUri`後の`C:%5Cx.png`）と`file:`のURLまで空になり、`MarkdownLink`や`resolveAssetSrc`に届かない（画像は表示されず、リンクはクリックしても何も起きない）。そこで`MarkdownView`に`lib/links.ts`の`markdownUrlTransform`を渡し、この2種類だけはそのまま残す。どちらもアプリ側でパスとして解決するか、開かないと判断するもので、Webviewがそのまま遷移・読み込みすることは無い。それ以外（`javascript:`など）は既定どおり空にする。
+
 ### 5.4 画像（`lib/assetSrc.ts`）
 
 `resolveAssetPath(src, dir)`でローカルの絶対パスを求め、`resolveAssetSrc`が`convertFileSrc()`でWebviewから読めるURL（`http://asset.localhost/...`）にする。URL（`https:`・`data:`など）はそのまま使う。
 
 - **パーセントエンコードの復元**: `src`は、まず`decodeLinkPart`（5.3と同じ関数）で元の文字に戻してから、スキームの判定と相対パスの解決を行う。`mdast-util-to-hast`は`src`も`normalizeUri`でパーセントエンコードする（`![](図.png)`は`%E5%9B%B3.png`、`<my image.png>`は`my%20image.png`、`C:\pics\a.png`は`C:%5Cpics%5Ca.png`になる）。さらに`convertFileSrc()`がパス全体を`encodeURIComponent`でもう一度エンコードし、asset protocol（Tauri `protocol/asset.rs`）は1回しか復元しない。そのため、復元せずに渡すと、日本語・空白・`\`を含むパスの画像は「`%E5%9B%B3.png`という名前のファイル」を探すことになり、表示されない。
 - `normalizeUri`は、`%`の後に16進数2桁が続かない場合だけ`%25`にする。そのため`100%.png`は`100%25.png`を経て元の名前に戻る。一方、ファイル名そのものに`%20`のような並びを含むファイルは、空白を含む名前として扱われ表示できない（ブラウザと同じ解釈であり、許容する）。
+- `file:`のURLの`src`は、Webviewが読み込めないため`fileUrlToPath`（5.3）でローカルパスに直してからasset protocolで読む。
 - Word形式で保存（6章）の画像の埋め込みも同じ`resolveAssetSrc`を使う。こちらはMarkdown ASTの`url`（`normalizeUri`を通る前の、書かれた通りの文字列）から呼ぶため、Markdownに`%20`などと書かれていた場合にだけ復元が効く。
 
 ## 6. Word形式エクスポート設計（requirement.md 3.10）

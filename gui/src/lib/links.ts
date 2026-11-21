@@ -1,3 +1,4 @@
+import { defaultUrlTransform } from "react-markdown";
 import { isMarkdownPath } from "./markdownFiles";
 import { hasUriScheme, isAbsolutePath, resolveRelativePath } from "./paths";
 
@@ -44,6 +45,21 @@ export function fileUrlToPath(url: string): { path: string; anchor: string | nul
     path = pathname;
   }
   return { path, anchor: anchor === "" ? null : anchor };
+}
+
+/**
+ * react-markdown `urlTransform` for every href/src. The default one blanks any URL whose
+ * "protocol" is not http(s)/mailto/irc(s)/xmpp, which also wipes out Windows absolute paths
+ * (`C:\x.png`, `C:/x.md`, or `C:%5Cx.png` after normalizeUri: `C:` looks like a protocol) and
+ * `file:` URLs before MarkdownLink / resolveAssetSrc ever see them. Those two are kept: the app
+ * resolves them itself and never lets the webview navigate to them. Everything else (e.g.
+ * `javascript:`) still goes through the default sanitizer.
+ */
+export function markdownUrlTransform(value: string): string {
+  if (/^file:/i.test(value) || isAbsolutePath(decodeLinkPart(value))) {
+    return value;
+  }
+  return defaultUrlTransform(value);
 }
 
 /**

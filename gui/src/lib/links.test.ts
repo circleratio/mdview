@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeLinkPart, resolveLinkTarget } from "./links";
+import { decodeLinkPart, markdownUrlTransform, resolveLinkTarget } from "./links";
 
 const DIR = "C:\\docs";
 
@@ -83,5 +83,28 @@ describe("resolveLinkTarget", () => {
     expect(resolveLinkTarget("image.png", DIR)).toEqual({ kind: "unsupported" });
     expect(resolveLinkTarget("other.md.bak#x", DIR)).toEqual({ kind: "unsupported" });
     expect(resolveLinkTarget("  ", DIR)).toEqual({ kind: "unsupported" });
+  });
+});
+
+describe("markdownUrlTransform", () => {
+  it("keeps Windows absolute paths that the default sanitizer would blank", () => {
+    for (const value of ["C:%5Cpics%5C%E5%9B%B3.png", "C:/docs/x.md", "c:\\x.png", "\\\\server\\share\\x.md"]) {
+      expect(markdownUrlTransform(value)).toBe(value);
+    }
+  });
+
+  it("keeps file: URLs", () => {
+    expect(markdownUrlTransform("file:///C:/Windows/System32/calc.exe")).toBe("file:///C:/Windows/System32/calc.exe");
+  });
+
+  it("keeps relative paths, anchors and safe URLs", () => {
+    for (const value of ["%E5%9B%B3.png", "#a", "other.md#b", "https://example.com", "mailto:a@example.com"]) {
+      expect(markdownUrlTransform(value)).toBe(value);
+    }
+  });
+
+  it("still blanks unsafe protocols", () => {
+    expect(markdownUrlTransform("javascript:alert(1)")).toBe("");
+    expect(markdownUrlTransform("vbscript:x")).toBe("");
   });
 });

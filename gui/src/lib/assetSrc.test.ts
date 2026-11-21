@@ -20,6 +20,10 @@ describe("resolveAssetPath", () => {
     expect(resolveAssetPath("C:%5Cpics%5C%E7%94%BB%E5%83%8F.png", DIR)).toBe("C:\\pics\\画像.png");
   });
 
+  it("turns file: URLs into local paths", () => {
+    expect(resolveAssetPath("file:///C:/pics/%E5%9B%B3.png", DIR)).toBe("C:\\pics\\図.png");
+  });
+
   it("leaves URLs alone", () => {
     expect(resolveAssetPath("https://example.com/a%20b.png", DIR)).toBeNull();
     expect(resolveAssetPath("data:image/png;base64,abc", DIR)).toBeNull();
