@@ -1,5 +1,7 @@
 # mdview-tui 要求仕様
 
+両版に共通する決まり（対応拡張子、文字コード、Markdown の対応範囲、見出しのアンカー、リンクの扱いなど）は [`doc/common.md`](../../doc/common.md) を参照。
+
 ## 概要
 
 ターミナル上で Markdown ファイルを整形表示する TUI ビューア `mdview-tui`。
