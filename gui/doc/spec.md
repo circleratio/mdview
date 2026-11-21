@@ -177,7 +177,8 @@ src/
 | 種類 | 条件 | 動作 |
 |---|---|---|
 | `anchor` | `#`始まり | 自タブのコンテナ配下から`id`が一致する要素を探してスクロールする（`scrollToIdWithin`。全タブが常時マウントされているため、文書全体のid検索は使わない。4.4参照） |
-| `external` | `hasUriScheme(href)`（`http:`/`https:`/`mailto:`など、Windowsの絶対パスと誤認しない任意のURIスキーム） | `@tauri-apps/plugin-opener`の`openUrl()`でOS既定ブラウザ（またはスキームに関連付けられたアプリ）を起動 |
+| `file`（`file:` のURL） | `file:`で始まる | `fileUrlToPath`で`URL`として解析し、絶対パスに直す（`file:///C:/a/b.md`→`C:\a\b.md`、`file://server/share/b.md`→`\\server\share\b.md`、`localhost`はホスト無しと同じ）。パスとアンカーは`decodeLinkPart`で戻す。`.md`/`.markdown`なら下の`file`と同じ動作、それ以外は`unsupported`。OSの既定のアプリには渡さない（`openUrl("file:///C:/Windows/System32/calc.exe")`でプログラムが起動するのを防ぐ。TUI版と同じ規則、`doc/common.md` 4章） |
+| `external` | `hasUriScheme(href)`（`http:`/`https:`/`mailto:`など、Windowsの絶対パスと誤認しない任意のURIスキーム。`file:`を除く） | `@tauri-apps/plugin-opener`の`openUrl()`でOS既定ブラウザ（またはスキームに関連付けられたアプリ）を起動 |
 | `file` | 上記以外で、`#`より前のパスが`.md`/`.markdown` | `resolveRelativePath(dir, path)`で絶対パス化し、`exists()`が真なら`openTab(path, { anchor })`を呼ぶ。既に同じファイルが別タブで開いていればそのタブへ切り替わり、開いていなければ新規タブとして開く（4.2参照） |
 | `unsupported` | それ以外（Markdown以外のローカルファイル、空のリンク） | エラーバナーに`サポートしていないリンク: <href>`を出す（`href`は`decodeLinkPart`で戻した文字列） |
 

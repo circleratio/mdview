@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from mdview_tui.links import Target, display_href, resolve
@@ -33,6 +34,25 @@ class ResolveTest(unittest.TestCase):
 
     def test_stdin_uses_cwd(self):
         self.assertEqual(resolve("a.md", None).path, Path.cwd() / "a.md")
+
+
+class FileUrlTest(unittest.TestCase):
+    def test_file_url_is_a_local_path_with_anchor(self):
+        target = resolve("file:///home/u/%E8%B3%87%E6%96%99.md#%E6%A6%82%E8%A6%81", BASE)
+        self.assertEqual(target, Target("file", path=Path("/home/u/資料.md"), anchor="概要"))
+
+    def test_localhost_and_unc(self):
+        self.assertEqual(resolve("file://localhost/home/x.md", BASE).path, Path("/home/x.md"))
+        self.assertEqual(resolve("file://server/share/x.md", BASE).path, Path("//server/share/x.md"))
+
+    def test_non_markdown_file_url_is_unsupported(self):
+        self.assertEqual(resolve("file:///usr/bin/calc", BASE).kind, "unsupported")
+
+    def test_drive_letter_on_windows(self):
+        with mock.patch("mdview_tui.links.os.name", "nt"):
+            from mdview_tui.links import _file_url
+
+            self.assertEqual(_file_url("file:///C:/docs/x.md#a"), ("C:/docs/x.md", "a"))
 
 
 class DisplayHrefTest(unittest.TestCase):

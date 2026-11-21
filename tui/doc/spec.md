@@ -261,7 +261,8 @@ def display_href(href: str) -> str: ...
 | href | 判定 |
 |---|---|
 | `#xxx` | `anchor`（同一ファイル内） |
-| スキームあり（`http:`, `https:`, `mailto:` など） | `external` |
+| スキームあり（`http:`, `https:`, `mailto:` など。`file:` を除く） | `external` |
+| `file:` の URL（`file:///home/x.md#a`、`file://server/share/x.md`） | パス部分と `#` 以降を `unquote` し、ローカルの絶対パスとして下の行と同じ判定をする（`file`/`unsupported`）。ホストが `localhost` 以外なら `//host/...` の UNC パスにする。Windows では `/C:/...` の先頭の `/` を取り除く。OS には渡さない（GUI 版と同じ規則、`doc/common.md` 4章） |
 | `*.md` / `*.markdown`（`#xxx` 付き可、URL エンコードを復号） | `file`（`base` のディレクトリからの相対パス、絶対パスはそのまま） |
 | 上記以外のローカルパス | `unsupported`（「サポートしていないリンク」と通知） |
 | 標準入力表示中（`base is None`）の相対ファイルリンク | カレントディレクトリ基準で解決する |
@@ -481,7 +482,7 @@ def to_view(data: dict[str, object]) -> FrontMatterView: ...
 | `render`（フロントマター） | 題名・作成者・日付・その他の項目・区切りの出力、点線の区切りの有無、目次（`headings`）に題名が入らないこと、`plain_lines` に含まれること、エラー表示、空のフロントマターで何も出ないこと、フロントマターがあっても本文の見出しの `anchors` のソース行がファイルの行番号と一致すること |
 | `slug` | 英字・記号・日本語・重複見出し |
 | `search` | 大文字小文字無視、全角文字のセル位置、0件、wrap around |
-| `links` | アンカー・外部・相対 `.md`・`#` 付き・URL エンコード・非対応ファイル・stdin 時、`display_href`（復元・不正な並び） |
+| `links` | アンカー・外部・相対 `.md`・`#` 付き・URL エンコード・非対応ファイル・stdin 時、`file:` の URL（アンカー・`localhost`・UNC・Windows のドライブ名・Markdown 以外）、`display_href`（復元・不正な並び） |
 | `history` | push で forward がクリアされる、back/forward の境界（空のとき None） |
 | `watcher` | 変更なし・更新・削除・再作成（一時ディレクトリで検証） |
 | `editor` | `VISUAL` 優先、`EDITOR`、未設定時の OS 別既定、引数付きコマンドの分割 |

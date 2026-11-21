@@ -58,6 +58,27 @@ describe("resolveLinkTarget", () => {
     expect(resolveLinkTarget("other.md", null)).toEqual({ kind: "file", path: "other.md", anchor: null });
   });
 
+  it("treats file: URLs as local paths instead of handing them to the OS", () => {
+    expect(resolveLinkTarget("file:///C:/docs/x.md#%E6%A6%82%E8%A6%81", DIR)).toEqual({
+      kind: "file",
+      path: "C:\\docs\\x.md",
+      anchor: "概要",
+    });
+    expect(resolveLinkTarget("FILE:///c:/Notes/a%20b.MD", DIR)).toEqual({
+      kind: "file",
+      path: "c:\\Notes\\a b.MD",
+      anchor: null,
+    });
+    expect(resolveLinkTarget("file://server/share/x.md", DIR)).toEqual({
+      kind: "file",
+      path: "\\\\server\\share\\x.md",
+      anchor: null,
+    });
+    expect(resolveLinkTarget("file://localhost/C:/x.md", DIR)).toEqual({ kind: "file", path: "C:\\x.md", anchor: null });
+    expect(resolveLinkTarget("file:///home/u/x.md", DIR)).toEqual({ kind: "file", path: "/home/u/x.md", anchor: null });
+    expect(resolveLinkTarget("file:///C:/Windows/System32/calc.exe", DIR)).toEqual({ kind: "unsupported" });
+  });
+
   it("rejects non-Markdown local files and empty links", () => {
     expect(resolveLinkTarget("image.png", DIR)).toEqual({ kind: "unsupported" });
     expect(resolveLinkTarget("other.md.bak#x", DIR)).toEqual({ kind: "unsupported" });

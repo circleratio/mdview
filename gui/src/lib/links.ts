@@ -22,6 +22,31 @@ export function decodeLinkPart(value: string): string {
 }
 
 /**
+ * Converts a `file:` URL to a local path, or null when it cannot be parsed.
+ * `file:///C:/a/b.md` -> `C:\a\b.md`, `file://server/share/b.md` -> `\\server\share\b.md`,
+ * `file:///home/b.md` -> `/home/b.md`. Windows paths use backslashes like the rest of the app.
+ */
+export function fileUrlToPath(url: string): { path: string; anchor: string | null } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const pathname = decodeLinkPart(parsed.pathname);
+  const anchor = decodeLinkPart(parsed.hash.replace(/^#/, ""));
+  let path: string;
+  if (parsed.host !== "") {
+    path = `\\\\${parsed.host}${pathname.replace(/\//g, "\\")}`;
+  } else if (/^\/[a-zA-Z]:([\/]|$)/.test(pathname)) {
+    path = pathname.slice(1).replace(/\//g, "\\");
+  } else {
+    path = pathname;
+  }
+  return { path, anchor: anchor === "" ? null : anchor };
+}
+
+/**
  * Classifies a link href and, for local Markdown files, resolves it against `dir` (the directory
  * of the file the link appears in). Pure, so it can be unit tested without Tauri.
  */
@@ -32,6 +57,13 @@ export function resolveLinkTarget(href: string, dir: string | null): LinkTarget 
   }
   if (trimmed.startsWith("#")) {
     return { kind: "anchor", anchor: decodeLinkPart(trimmed.slice(1)) };
+  }
+  // `file:` URLs are local paths, never handed to the OS: that could launch any program
+  // (`file:///C:/Windows/System32/calc.exe`). Same rule as the TUI (doc/common.md 4).
+  if (/^file:/i.test(trimmed)) {
+    const local = fileUrlToPath(trimmed);
+    if (local === null || !isMarkdownPath(local.path)) return { kind: "unsupported" };
+    return { kind: "file", path: local.path, anchor: local.anchor };
   }
   // Check the scheme on the decoded form: normalizeUri turns `C:\docs\x.md` into `C:%5Cdocs%5Cx.md`,
   // which would otherwise look like a URL with the scheme `C:`. URLs are passed on as written.
