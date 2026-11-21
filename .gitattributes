@@ -1,0 +1,5 @@
+# Normalize line endings of text files to LF in the repository.
+* text=auto
+
+# Test fixtures must keep their exact bytes (e.g. BOM + CRLF, Shift_JIS).
+tui/tests/fixtures/** -text
