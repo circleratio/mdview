@@ -50,6 +50,18 @@ npx tsc --noEmit     # 型チェック
 
 UI・Tauri連携部分の自動テストは無いため、`npm run tauri dev` で実機確認する（詳細は `doc/spec.md` の「テスト方針」を参照）。
 
+## アプリのアイコン
+
+アイコンの元データは [`app-icon.svg`](./app-icon.svg)（1024×1024 の SVG）。これを編集した後、次のコマンドで `src-tauri/icons/` の各サイズの画像（Windows の `icon.ico` を含む）を作り直す。
+
+```sh
+npm run tauri icon app-icon.svg
+```
+
+コマンドは Android・iOS 用の画像（`src-tauri/icons/android/`、`src-tauri/icons/ios/`）も作るが、このアプリでは使わないので削除する。ウィンドウ内で使うファビコン（`public/icon.png`）は `src-tauri/icons/icon.png` をコピーして更新する。
+
+タイトルバーのアイコンはビルド時に実行ファイルへ埋め込まれる。`src-tauri/build.rs` で `icons/` を変更の監視対象にしているため、アイコンを作り直した後の `npm run tauri dev` / `npm run tauri build` では自動的に再ビルドされる。
+
 ## Recommended IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)

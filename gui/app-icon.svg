@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Source of the mdview app icon. Regenerate all sizes with: npm run tauri icon app-icon.svg -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1e40af"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#cbd5e1"/>
+      <stop offset="1" stop-color="#e2e8f0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background tile -->
+  <rect x="32" y="32" width="960" height="960" rx="200" fill="url(#bg)"/>
+
+  <!-- Page with a folded corner -->
+  <path d="M272 160 H632 L792 320 V824 Q792 864 752 864 H272 Q232 864 232 824 V200 Q232 160 272 160 Z" fill="#ffffff"/>
+  <path d="M632 160 V280 Q632 320 672 320 H792 Z" fill="url(#fold)"/>
+
+  <!-- Markdown mark: "M" and a down arrow -->
+  <g fill="#1d4ed8">
+    <path d="M288 640 V400 H352 L412 484 L472 400 H536 V640 H472 V508 L412 592 L352 508 V640 Z"/>
+    <path d="M636 400 H708 V528 H764 L672 640 L580 528 H636 Z"/>
+  </g>
+
+  <!-- Body text lines -->
+  <g fill="#93c5fd">
+    <rect x="288" y="700" width="476" height="36" rx="18"/>
+    <rect x="288" y="764" width="320" height="36" rx="18"/>
+  </g>
+</svg>
