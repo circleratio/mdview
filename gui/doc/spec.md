@@ -61,13 +61,14 @@ src/
     MarkdownView.tsx                    # 右ペイン本体（react-markdown配線）
     FrontMatterHeader.tsx                 # 本文先頭のフロントマター表示（12章参照）
     MermaidBlock.tsx                      # Mermaid個別描画
-    MarkdownLink.tsx                        # 相対リンク/外部リンクの振り分け
+    MarkdownLink.tsx                        # リンクのクリック処理（判定はlib/links.ts）
   lib/
     markdown.tsx      # remark/rehypeプラグイン構成・componentsマップ
     headings.ts          # 見出しツリー構築（純粋関数、テスト対象）
     paths.ts                # 相対パス解決（純粋関数、テスト対象）
     assetSrc.ts                # img src解決（convertFileSrc）
     markdownFiles.ts              # .md/.markdown判定
+    links.ts                         # リンク先の判定・パーセントエンコードの復元（純粋関数、テスト対象、5.3参照）
     displayPath.ts                   # UI表示用のファイル名抽出
     docxExport.ts                       # Markdown AST → docxパッケージのドキュメントツリーへの変換（6章参照）
     settingsStore.ts                      # settings.jsonストアの共有ローダー（エディタ設定・ズーム倍率で共用）
@@ -107,7 +108,7 @@ src/
 ### 4.1 状態管理
 
 - `state/TabsContext.tsx`: アプリ全体でただ1つ、開いている全タブの配列`tabs: TabState[]`・`activeTabPath: string | null`・どのタブにも属さない一時的なエラー`appError: string | null`を保持するグローバル状態。
-  - `TabState = { path, dir, content, loading, error, search: { query, matchCount, currentIndex } }`。**タブの識別子は連番IDではなく`path`文字列そのもの**とする。「既に同じファイルを開いていれば新規タブを作らず既存タブに切り替える」（requirement.md 3.2）を`tabs.some(t => t.path === path)`という単純な配列検索だけで実現できるための設計。パスの大文字小文字などの正規化は行わない（既存の`useFileWatcher`のpath完全一致判定と同じ前提を踏襲）。
+  - `TabState = { path, dir, content, loading, error, search: { query, matchCount, currentIndex }, pendingAnchor }`。**タブの識別子は連番IDではなく`path`文字列そのもの**とする。「既に同じファイルを開いていれば新規タブを作らず既存タブに切り替える」（requirement.md 3.2）を`tabs.some(t => t.path === path)`という単純な配列検索だけで実現できるための設計。パスの大文字小文字などの正規化は行わない（既存の`useFileWatcher`のpath完全一致判定と同じ前提を踏襲）。
   - 公開する操作: タブの追加（`loading:true`の仮登録）／`setTabDocument`／`setTabError`／`setTabLoading`／`removeTab`／`setActiveTab`、検索状態用の`setTabSearchQuery`・`setTabSearchMatches`・`searchGoToNext`・`searchGoToPrev`・`clearTabSearch`、および`appError`用の`setAppError`。
   - `appError`は「まだどのタブにも属していない」失敗専用のバナー状態（新規オープン試行の失敗、外部エディタ起動失敗）。既に開いているタブの再読み込み失敗は、ここではなく該当タブ自身の`error`に入る（4.4参照）。
 - `state/TabDocumentContext.tsx`: `TabPane`が自分の担当する1タブぶんの`{ path, dir }`だけを配下（`MarkdownLink`）へ渡すための読み取り専用コンテキスト。旧`DocumentContext`が持っていた`setDocument`等のsetterはすべて`TabsContext`側（ファイル読み込みのオーケストレーションを行う`useFileOpener`経由）に一本化したため、こちらは値を受け渡すだけの薄いラッパーになる。
@@ -116,7 +117,7 @@ src/
 
 | フック | 役割 |
 | --- | --- |
-| `useFileOpener` | `openTab(path)`と`reloadTab(path)`を提供。`openTab`は既に同じpathのタブがあれば`setActiveTab`した上で`addRecentFile`を呼ぶ（新規タブを作らない場合も「開いた」扱いとして最近使ったファイル一覧の先頭に繰り上げる、requirement.md 3.1）。無ければ`loading:true`の仮タブを追加して即座にアクティブにし、`exists`確認→`readTextFile`→`dirname`取得→`setTabDocument`→`addRecentFile`→Rust`start_watching`呼び出しを行う。失敗時は`removeTab`でタブごと破棄しつつ`setAppError`＋`removeRecentFile`（新規タブが壊れたまま残ることはない）。`reloadTab`は既存タブに対してのみ動作し、失敗時はタブを消さず`setTabError`のみ行う（stale contentの上にエラーバナーを重ねる、単一ファイル版と同じ見た目）。ダイアログ経由(`openViaDialog`)・ドラッグ&ドロップ・最近使ったファイル選択・相対Markdownリンククリックは、いずれもこの`openTab`を呼ぶ薄いラッパー。 |
+| `useFileOpener` | `openTab(path, { anchor })`と`reloadTab(path)`を提供。`openTab`は既に同じpathのタブがあれば`setActiveTab`した上で`addRecentFile`を呼ぶ（新規タブを作らない場合も「開いた」扱いとして最近使ったファイル一覧の先頭に繰り上げる、requirement.md 3.1）。無ければ`loading:true`の仮タブを追加して即座にアクティブにし、`exists`確認→`readTextFile`→`dirname`取得→`setTabDocument`→`addRecentFile`→Rust`start_watching`呼び出しを行う。失敗時は`removeTab`でタブごと破棄しつつ`setAppError`＋`removeRecentFile`（新規タブが壊れたまま残ることはない）。`reloadTab`は既存タブに対してのみ動作し、失敗時はタブを消さず`setTabError`のみ行う（stale contentの上にエラーバナーを重ねる、単一ファイル版と同じ見た目）。ダイアログ経由(`openViaDialog`)・ドラッグ&ドロップ・最近使ったファイル選択・相対Markdownリンククリックは、いずれもこの`openTab`を呼ぶ薄いラッパー。 |
 | `useFileWatcher` | アプリ起動時に一度だけ`file-changed`イベントを購読し、payloadのpathが現在開いているいずれかのタブのpathと一致すれば、そのタブに対して`reloadTab`を呼ぶ。`tabs`配列は常に最新を参照できるようrefで保持し、タブの増減のたびに購読を張り直したりはしない。 |
 | `useRecentFiles` | `@tauri-apps/plugin-store`に`recentFiles`配列（最大10件、重複除去）を永続化する。変更なし。 |
 | `useHeadings` | レンダリング後のDOMを`querySelectorAll('h1..h6')`で走査して見出しツリーを構築し、`IntersectionObserver`で画面内に入っている見出しのうち最上部のものを「アクティブ」とする。ロジックは変更なく、`TabPane`ごとに1インスタンス生成される。 |
@@ -167,13 +168,19 @@ src/
 
 `rehype-katex`の`throwOnError: false`により、不正な数式でもアプリ全体をクラッシュさせず、KaTeX標準のインラインエラー表示（赤字でソースを表示）に委ねる。
 
-### 5.3 相対リンク（`MarkdownLink.tsx`）
+### 5.3 リンク（`MarkdownLink.tsx`・`lib/links.ts`）
 
-クリック時に`href`を判定する分岐:
+クリック時は、まず`event.preventDefault()`でWebview自身の遷移を止め（不正なパスへ遷移してアプリの画面が壊れるのを防ぐ）、`lib/links.ts`の`resolveLinkTarget(href, dir)`でリンク先を次の4種類に分ける。判定規則は両版の共通仕様（`doc/common.md` 4章）に合わせている。
 
-1. `#`始まり → 何もせず標準のブラウザ内アンカー遷移に任せる（`scroll-margin-top`をCSSで見出しに設定済み）
-2. `hasUriScheme(href)`（`http:`/`https:`/`mailto:`など、Windowsの絶対パスと誤認しない任意のURIスキーム）→ `event.preventDefault()`し`@tauri-apps/plugin-opener`の`openUrl()`でOS既定ブラウザ（またはスキームに関連付けられたアプリ）を起動
-3. それ以外（相対/絶対パス）→ `event.preventDefault()`し`resolveRelativePath(dir, href)`で絶対パス化、`.md`/`.markdown`かつ`exists()`が真なら`openTab()`を呼ぶ。既に同じファイルが別タブで開いていればそのタブへ切り替わり、開いていなければ新規タブとして開く（4.2参照）。条件を満たさない場合は何もしない（Webviewが不正なパスへ遷移して壊れるのを防ぐ）
+| 種類 | 条件 | 動作 |
+|---|---|---|
+| `anchor` | `#`始まり | 自タブのコンテナ配下から`id`が一致する要素を探してスクロールする（`scrollToIdWithin`。全タブが常時マウントされているため、文書全体のid検索は使わない。4.4参照） |
+| `external` | `hasUriScheme(href)`（`http:`/`https:`/`mailto:`など、Windowsの絶対パスと誤認しない任意のURIスキーム） | `@tauri-apps/plugin-opener`の`openUrl()`でOS既定ブラウザ（またはスキームに関連付けられたアプリ）を起動 |
+| `file` | 上記以外で、`#`より前のパスが`.md`/`.markdown` | `resolveRelativePath(dir, path)`で絶対パス化し、`exists()`が真なら`openTab(path, { anchor })`を呼ぶ。既に同じファイルが別タブで開いていればそのタブへ切り替わり、開いていなければ新規タブとして開く（4.2参照） |
+| `unsupported` | それ以外（Markdown以外のローカルファイル、空のリンク） | 何もしない |
+
+- **パーセントエンコードの復元**: パスとアンカーはそれぞれ`decodeURIComponent`で元の文字に戻す。不正な並び（単独の`%`など）は元の文字列のまま扱う。Markdownに`%20`と書いた場合だけでなく、日本語などをそのまま書いた場合にも必要になる。react-markdownが使う`mdast-util-to-hast`は、すべてのリンクの`href`を`normalizeUri`でパーセントエンコードするため、`[x](#概要)`はDOM上で`#%E6%A6%82%E8%A6%81`になり、そのままでは`rehype-slug`の見出しid（`概要`）にも実在のファイル名にも一致しない。
+- **アンカー付きのファイルリンク（`other.md#id`）**: `#`でパスとアンカーに分けてから拡張子を判定する。アンカーは`TabState.pendingAnchor`に入れておき、`TabPane`が「アクティブ、かつ本文を描画済み」になった時点の`useEffect`で`scrollToIdWithin`を呼んでから`null`に戻す。新規タブでは、読み込みが終わって本文が描画された直後に移動する。既存タブへの切り替えでは、`usePaneZoom`がタブ切り替え時にスクロール位置を戻す処理（`useLayoutEffect`）の後に実行されるため、その処理で移動が打ち消されることはない。
 
 `dir`は自タブの`TabDocumentContext`から取得するため、リンクが含まれるタブ自身のディレクトリを基準に相対パスが解決される。
 

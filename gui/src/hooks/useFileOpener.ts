@@ -7,8 +7,17 @@ import { useTabs } from "../state/TabsContext";
 import { useRecentFiles } from "./useRecentFiles";
 
 export function useFileOpener() {
-  const { tabs, addPendingTab, setActiveTab, setTabDocument, setTabError, setTabLoading, removeTab, setAppError } =
-    useTabs();
+  const {
+    tabs,
+    addPendingTab,
+    setTabPendingAnchor,
+    setActiveTab,
+    setTabDocument,
+    setTabError,
+    setTabLoading,
+    removeTab,
+    setAppError,
+  } = useTabs();
   const { addRecentFile, removeRecentFile } = useRecentFiles();
 
   // Read via ref (not a dependency) so openTab's identity stays stable across tab-state
@@ -18,15 +27,18 @@ export function useFileOpener() {
   tabsRef.current = tabs;
 
   const openTab = useCallback(
-    async (path: string) => {
+    /** `anchor`: heading id to scroll to once the tab is shown (from `other.md#id` links). */
+    async (path: string, options?: { anchor?: string | null }) => {
+      const anchor = options?.anchor ?? null;
       if (tabsRef.current.some((tab) => tab.path === path)) {
         setActiveTab(path);
+        if (anchor !== null) setTabPendingAnchor(path, anchor);
         // Still counts as "opening" the file for recency purposes, so bump it to the front
         // of the recent-files list even though no new tab is created.
         await addRecentFile(path);
         return;
       }
-      addPendingTab(path);
+      addPendingTab(path, anchor);
       try {
         const fileExists = await exists(path);
         if (!fileExists) {
@@ -45,7 +57,16 @@ export function useFileOpener() {
         await removeRecentFile(path);
       }
     },
-    [addPendingTab, setActiveTab, setTabDocument, removeTab, setAppError, addRecentFile, removeRecentFile],
+    [
+      addPendingTab,
+      setTabPendingAnchor,
+      setActiveTab,
+      setTabDocument,
+      removeTab,
+      setAppError,
+      addRecentFile,
+      removeRecentFile,
+    ],
   );
 
   const reloadTab = useCallback(

@@ -13,6 +13,8 @@ export interface TabState {
   loading: boolean;
   error: string | null;
   search: TabSearchState;
+  /** Heading id to scroll to once this tab is shown (set by `other.md#id` links), then cleared. */
+  pendingAnchor: string | null;
 }
 
 interface TabsState {
@@ -21,7 +23,8 @@ interface TabsState {
 }
 
 type TabsAction =
-  | { type: "add_pending"; path: string }
+  | { type: "add_pending"; path: string; anchor: string | null }
+  | { type: "set_pending_anchor"; path: string; anchor: string | null }
   | { type: "set_document"; path: string; dir: string; content: string }
   | { type: "set_error"; path: string; message: string }
   | { type: "set_loading"; path: string; loading: boolean }
@@ -35,8 +38,16 @@ type TabsAction =
 
 const initialSearch: TabSearchState = { query: "", matchCount: 0, currentIndex: 0 };
 
-function createPendingTab(path: string): TabState {
-  return { path, dir: null, content: null, loading: true, error: null, search: { ...initialSearch } };
+function createPendingTab(path: string, anchor: string | null): TabState {
+  return {
+    path,
+    dir: null,
+    content: null,
+    loading: true,
+    error: null,
+    search: { ...initialSearch },
+    pendingAnchor: anchor,
+  };
 }
 
 function updateTab(tabs: TabState[], path: string, updater: (tab: TabState) => TabState): TabState[] {
@@ -49,8 +60,13 @@ function reducer(state: TabsState, action: TabsAction): TabsState {
       if (state.tabs.some((tab) => tab.path === action.path)) {
         return { ...state, activeTabPath: action.path };
       }
-      return { tabs: [...state.tabs, createPendingTab(action.path)], activeTabPath: action.path };
+      return { tabs: [...state.tabs, createPendingTab(action.path, action.anchor)], activeTabPath: action.path };
     }
+    case "set_pending_anchor":
+      return {
+        ...state,
+        tabs: updateTab(state.tabs, action.path, (tab) => ({ ...tab, pendingAnchor: action.anchor })),
+      };
     case "set_document":
       return {
         ...state,
@@ -133,7 +149,8 @@ interface TabsContextValue {
   activeTabPath: string | null;
   activeTab: TabState | null;
   appError: string | null;
-  addPendingTab: (path: string) => void;
+  addPendingTab: (path: string, anchor?: string | null) => void;
+  setTabPendingAnchor: (path: string, anchor: string | null) => void;
   setTabDocument: (path: string, dir: string, content: string) => void;
   setTabError: (path: string, message: string) => void;
   setTabLoading: (path: string, loading: boolean) => void;
@@ -155,7 +172,14 @@ export function TabsProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [appError, setAppError] = useState<string | null>(null);
 
-  const addPendingTab = useCallback((path: string) => dispatch({ type: "add_pending", path }), []);
+  const addPendingTab = useCallback(
+    (path: string, anchor: string | null = null) => dispatch({ type: "add_pending", path, anchor }),
+    [],
+  );
+  const setTabPendingAnchor = useCallback(
+    (path: string, anchor: string | null) => dispatch({ type: "set_pending_anchor", path, anchor }),
+    [],
+  );
   const setTabDocument = useCallback(
     (path: string, dir: string, content: string) => dispatch({ type: "set_document", path, dir, content }),
     [],
@@ -182,6 +206,7 @@ export function TabsProvider({ children }: { children: ReactNode }) {
       activeTab,
       appError,
       addPendingTab,
+      setTabPendingAnchor,
       setTabDocument,
       setTabError,
       setTabLoading,
@@ -200,6 +225,7 @@ export function TabsProvider({ children }: { children: ReactNode }) {
       activeTab,
       appError,
       addPendingTab,
+      setTabPendingAnchor,
       setTabDocument,
       setTabError,
       setTabLoading,

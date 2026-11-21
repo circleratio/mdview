@@ -1,13 +1,14 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { TabDocumentProvider } from "../state/TabDocumentContext";
 import { useHeadings } from "../hooks/useHeadings";
 import { useTabSearchSync } from "../hooks/useSearch";
 import { usePaneZoom } from "../hooks/usePaneZoom";
-import type { TabState } from "../state/TabsContext";
+import { useTabs, type TabState } from "../state/TabsContext";
 import { Sidebar } from "./Sidebar";
 import { MarkdownView } from "./MarkdownView";
 import { parseFrontMatter } from "../lib/frontMatter";
+import { scrollToIdWithin } from "../lib/links";
 
 interface TabPaneProps {
   tab: TabState;
@@ -29,16 +30,24 @@ export function TabPane({ tab, isActive }: TabPaneProps) {
   // Front matter is split off before rendering so it never reaches react-markdown (spec.md 12.1).
   const parsed = useMemo(() => (tab.content === null ? null : parseFrontMatter(tab.content)), [tab.content]);
 
+  const { setTabPendingAnchor } = useTabs();
+
   const handleSelectHeading = useCallback((id: string) => {
     // Scoped to this tab's own container, not document.getElementById: other open tabs stay
     // mounted (hidden) with their own rehype-slug ids, which can collide with this tab's.
     const container = containerRef.current;
-    if (!container) return;
-    const target = Array.from(container.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")).find(
-      (el) => el.id === id,
-    );
-    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (container) scrollToIdWithin(container, id, "smooth");
   }, []);
+
+  // Jump requested by an `other.md#id` link. Runs after the zoom layout effect so the jump is not
+  // overwritten by the scroll restoration done when the tab becomes active.
+  const { path, pendingAnchor } = tab;
+  useEffect(() => {
+    if (pendingAnchor === null || !isActive || !hasContent) return;
+    const container = containerRef.current;
+    if (container) scrollToIdWithin(container, pendingAnchor, "auto");
+    setTabPendingAnchor(path, null);
+  }, [path, pendingAnchor, isActive, hasContent, setTabPendingAnchor]);
 
   return (
     <div className="tab-pane" data-tab-path={tab.path} style={{ display: isActive ? "flex" : "none" }}>
